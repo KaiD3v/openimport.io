@@ -1,13 +1,23 @@
 import { defineConfig } from 'vitest/config';
-import tsconfigPaths from 'vite-tsconfig-paths';
+
+const testEnv = {
+  NODE_ENV: 'test',
+  PORT: '3001',
+  DATABASE_URL:
+    'postgresql://openimport:openimport@localhost:5434/openimport_test',
+  ALLOWED_ORIGINS: 'http://localhost:5173',
+  LOG_LEVEL: 'silent',
+};
 
 export default defineConfig({
-  // Resolves the path aliases declared in tsconfig.json, including the ones
-  // added by `nest g library`.
-  plugins: [tsconfigPaths()],
+  resolve: {
+    tsconfigPaths: true,
+  },
   test: {
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    exclude: ['src/generated/**', 'dist/**', 'node_modules/**'],
+    env: testEnv,
   },
 });
