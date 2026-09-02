@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TemplateFieldType {
+  string
+  integer
+  currency
+
+  @@map("template_field_type")
+}
+
+model Organization {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  apiKeys   ApiKey[]
+  templates ImportTemplate[]
+
+  @@map("organizations")
+}
+
+model ApiKey {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String    @db.VarChar(100)
+  keyHash        String    @unique(map: "uq_api_keys_key_hash") @map("key_hash") @db.VarChar(64)
+  keyPrefix      String    @map("key_prefix") @db.VarChar(24)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "idx_api_keys_organization_id")
+  @@map("api_keys")
+}
+
+model ImportTemplate {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String   @db.VarChar(100)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fields       TemplateField[]
+
+  @@unique([organizationId, name], map: "uq_import_templates_organization_id_name")
+  @@map("import_templates")
+}
+
+model TemplateField {
+  id         String            @id @default(uuid(7)) @db.Uuid
+  templateId String            @map("template_id") @db.Uuid
+  key        String            @db.VarChar(64)
+  label      String           @db.VarChar(120)
+  type       TemplateFieldType
+  required   Boolean
+  position   Int
+
+  template ImportTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, key], map: "uq_template_fields_template_id_key")
+  @@unique([templateId, position], map: "uq_template_fields_template_id_position")
+  @@map("template_fields")
+}
