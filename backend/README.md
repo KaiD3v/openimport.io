@@ -1,114 +1,124 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# OpenImport backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS API for multi-tenant import templates. Authenticate with an organization API key:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```
+Authorization: Bearer <api-key>
 ```
 
-## Compile and run the project
+The organization is derived from the verified key. Clients must not send `organizationId`.
+
+## Requirements
+
+- Node.js 24
+- npm
+- Docker (PostgreSQL only)
+
+## Local setup
+
+1. Copy environment variables:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
 ```
 
-## Run tests
+2. Generate a high-entropy API key and put it in `.env` as `SEED_API_KEY`. The value must be `oi_live_` followed by exactly 64 hexadecimal characters, with no whitespace. `.env.example` leaves the variable empty on purpose. Do not commit `.env`.
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+node -e "console.log('oi_live_'+require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+3. Start PostgreSQL from the repository root:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+docker compose up -d
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+This creates two databases on host port **5434**: `openimport` (development) and `openimport_test` (tests).
 
-## Observability
+4. Install dependencies, generate the Prisma Client, and apply the versioned migration:
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+```bash
+npm install
+npm run prisma:generate
+npm run prisma:migrate:deploy
+```
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+During first-time development you can also run `npm run prisma:migrate -- --name init` if you need to create a new migration. Do not use `prisma db push`.
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+5. Seed the local organization. The seed refuses to run when `NODE_ENV=production`, rejects empty, short, placeholder, and malformed keys before touching the database, and stores only a SHA-256 hash plus a diagnostic prefix. It never prints the full key.
 
-## Resources
+If `DATABASE_URL` is already set in your shell, it wins over `.env`. Unset it first so the seed uses the development database from `.env`.
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+npm run prisma:seed
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+6. Start the API:
 
-## Support
+```bash
+npm run start:dev
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+The API listens on `PORT` (default 3000).
 
-## Stay in touch
+- Health: `GET /health`
+- Readiness (includes a database ping, no connection string in the body): `GET /health/ready`
+- OpenAPI UI: `GET /docs`
+- OpenAPI JSON: `GET /docs-json`
+- Create template: `POST /api/v1/templates`
+- Get template: `GET /api/v1/templates/:templateId`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Template contract
 
-## License
+`POST /api/v1/templates`
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```json
+{
+  "name": "products",
+  "fields": [
+    {
+      "key": "sku",
+      "label": "SKU",
+      "type": "string",
+      "required": true
+    },
+    {
+      "key": "priceInCents",
+      "label": "Preço",
+      "type": "currency",
+      "required": true
+    }
+  ]
+}
+```
+
+Field types are `string`, `integer`, or `currency`. JSON types are strict: `required` must be a boolean, and `name`, `key`, and `label` must be strings. `name` is 1–100 characters after trim and unique per organization. Each template needs 1–50 fields. Field `key` values must be unique in the template and match `^[a-z][a-zA-Z0-9]{0,63}$`.
+
+Unknown routes, with or without `/api/v1`, return JSON `{ code, message, traceId }` with `code: "RESOURCE.NOT_FOUND"`. Successful and error responses include `X-Request-ID`, matching `traceId` on errors. Incoming request IDs are accepted only when they are 1–128 characters from `[A-Za-z0-9._-]`; otherwise the API mints a new id.
+
+Responses never include `organizationId` or credential hashes.
+
+## Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `npm run start:dev` | Watch mode |
+| `npm run typecheck` | Prisma generate + `tsc` for `src/` and `test/` |
+| `npm run lint` | Oxlint |
+| `npm test` | Unit tests |
+| `npm run test:e2e` | HTTP tests against Postgres `openimport_test` |
+| `npm run build` | Generate Prisma Client and compile |
+| `npm run prisma:generate` | Generate Prisma Client |
+| `npm run prisma:migrate` | Create/apply a development migration |
+| `npm run prisma:migrate:deploy` | Apply committed migrations |
+| `npm run prisma:seed` | Seed the local organization from `SEED_API_KEY` |
+
+## Tests
+
+Unit tests do not use the database. E2E tests apply migrations to `openimport_test` and create isolated organizations per case.
+
+```bash
+npm test
+npm run test:e2e
+```
