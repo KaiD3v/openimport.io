@@ -38,6 +38,23 @@ export const envSchema = z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
     ENABLE_DOCS: envBool,
+    IMPORT_MAX_FILE_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5_242_880),
+    IMPORT_MAX_DATA_ROWS: z.coerce.number().int().positive().default(10_000),
+    IMPORT_MAX_COLUMNS: z.coerce.number().int().positive().default(50),
+    IMPORT_MAX_FIELD_BYTES: z.coerce.number().int().positive().default(65_536),
+    S3_ENDPOINT: z.string().url(),
+    S3_REGION: z.string().min(1).default('us-east-1'),
+    S3_ACCESS_KEY_ID: z.string().min(1),
+    S3_SECRET_ACCESS_KEY: z.string().min(1),
+    S3_BUCKET: z.string().min(1),
+    S3_FORCE_PATH_STYLE: z
+      .enum(['true', 'false', '1', '0'])
+      .default('true')
+      .transform((value) => value === 'true' || value === '1'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.ALLOWED_ORIGINS.includes('*')) {

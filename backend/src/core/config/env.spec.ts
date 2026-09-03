@@ -6,6 +6,10 @@ const REQUIRED = {
   PORT: '3000',
   DATABASE_URL: 'postgresql://openimport:openimport@localhost:5432/openimport',
   ALLOWED_ORIGINS: 'http://localhost:5173',
+  S3_ENDPOINT: 'http://localhost:9000',
+  S3_ACCESS_KEY_ID: 'openimport',
+  S3_SECRET_ACCESS_KEY: 'openimportsecret',
+  S3_BUCKET: 'openimport',
 };
 
 describe('loadEnv', () => {
