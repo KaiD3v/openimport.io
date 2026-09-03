@@ -41,6 +41,50 @@ function fragmentIntoSingleByteChunks(source: Readable): Readable {
   );
 }
 
+/** Split after the CR of the first data record so CRLF spans two chunks. */
+function fragmentCrLfAfterFirstDataRecord(source: Readable): Readable {
+  return Readable.from(
+    (async function* () {
+      const parts: Buffer[] = [];
+      for await (const chunk of source) {
+        parts.push(
+          Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string),
+        );
+      }
+      const all = Buffer.concat(parts);
+      const anchor = all.indexOf(Buffer.from('A\r\n', 'utf8'));
+      if (anchor < 0) {
+        yield all;
+        return;
+      }
+      const splitAt = anchor + 2; // after 'A\r', before '\n'
+      yield all.subarray(0, splitAt);
+      // Keep the second chunk distinct through the hasher (no sync coalesce).
+      await Promise.resolve();
+      yield all.subarray(splitAt);
+    })(),
+  );
+}
+
+/** Splits the stream into two chunks at an exact byte offset. */
+function fragmentAtByteOffset(source: Readable, offset: number): Readable {
+  return Readable.from(
+    (async function* () {
+      const parts: Buffer[] = [];
+      for await (const chunk of source) {
+        parts.push(
+          Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string),
+        );
+      }
+      const all = Buffer.concat(parts);
+      yield all.subarray(0, offset);
+      // Keep the second chunk distinct through the hasher (no sync coalesce).
+      await Promise.resolve();
+      yield all.subarray(offset);
+    })(),
+  );
+}
+
 describe('Import sessions (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -827,12 +871,17 @@ describe('Import sessions (e2e)', () => {
     expect(response.body.paths['/api/v1/imports']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/file']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/mapping']).toBeDefined();
+    expect(response.body.paths['/api/v1/imports/{importId}/preview']).toBeDefined();
     const spec = JSON.stringify(response.body);
     expect(spec).toContain('IMPORT.FILE_ALREADY_UPLOADED');
     expect(spec).toContain('IMPORT.UPLOAD_NOT_ALLOWED');
     expect(spec).toContain('IMPORT.MAPPING_REVISION_CONFLICT');
     expect(spec).toContain('IMPORT.MAPPING_NOT_ALLOWED');
     expect(spec).toContain('IMPORT.MAPPING_INVALID');
+    expect(spec).toContain('IMPORT.PREVIEW_NOT_ALLOWED');
+    expect(spec).toContain('IMPORT.MAPPING_INCOMPLETE');
+    expect(spec).toContain('IMPORT.FILE_CHANGED');
+    expect(spec).toContain('IMPORT.PREVIEW_UNAVAILABLE');
     const createParams =
       response.body.paths['/api/v1/imports'].post.parameters ?? [];
     expect(
@@ -1239,4 +1288,717 @@ describe('Import sessions (e2e)', () => {
       await restarted.close();
     }
   });
+
+  async function completeMapping(
+    apiKey: string,
+    importId: string,
+    expectedRevision = 0,
+  ): Promise<{ revision: number }> {
+    const response = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${apiKey}`)
+      .send({
+        expectedRevision,
+        mappings: [
+          { columnPosition: 0, fieldKey: 'sku' },
+          { columnPosition: 2, fieldKey: 'priceInCents' },
+        ],
+      })
+      .expect(200);
+    return { revision: response.body.revision as number };
+  }
+
+  it('previews mapped rows with exact cents, mixed validity, and full-file stats', async () => {
+    const tenant = await trackTenant();
+    const previewCsv =
+      'sku,name,price\nTEN-001,Tênis Runner,"R$ 299,90"\nTEN-002,Broken,299.90\nTEN-003,Ok,10\n';
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-flow-001',
+      previewCsv,
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+
+    const preview = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('X-Request-ID', 'req_preview_ok_001')
+      .send({ expectedMappingRevision: revision, limit: 1 })
+      .expect(200);
+
+    expect(preview.status).toBe(200);
+    expect(preview.headers['cache-control']).toMatch(/no-store/);
+    expect(preview.headers['x-request-id']).toBe('req_preview_ok_001');
+    expect(preview.body.importId).toBe(importId);
+    expect(preview.body.mappingRevision).toBe(revision);
+    expect(preview.body.normalizationProfile).toBe('pt-BR-v1');
+    expect(preview.body.limit).toBe(1);
+    expect(preview.body.sampleTruncated).toBe(true);
+    expect(preview.body.summary).toEqual({
+      totalRows: 3,
+      validRows: 2,
+      invalidRows: 1,
+    });
+    expect(preview.body.rows).toHaveLength(1);
+    expect(preview.body.rows[0]).toEqual({
+      recordNumber: 1,
+      valid: true,
+      data: { sku: 'TEN-001', priceInCents: 29990 },
+      errors: [],
+    });
+    expect(preview.body).not.toHaveProperty('organizationId');
+    expect(preview.body).not.toHaveProperty('storageObjectKey');
+
+    const again = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: revision, limit: 1 })
+      .expect(200);
+    expect(again.body).toEqual(preview.body);
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('uploaded');
+    const mapping = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(mapping.body.revision).toBe(revision);
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  });
+
+  it('returns 404 when another organization requests preview', async () => {
+    const tenantA = await trackTenant();
+    const tenantB = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenantA.apiKey,
+      'preview-tenant-001',
+    );
+    const { revision } = await completeMapping(tenantA.apiKey, importId);
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenantB.apiKey}`)
+      .send({ expectedMappingRevision: revision })
+      .expect(404);
+    expect(response.body.code).toBe('IMPORT.NOT_FOUND');
+  });
+
+  it('blocks preview for created and upload_failed sessions', async () => {
+    const tenant = await trackTenant();
+    const templateId = await createTemplate(tenant.apiKey);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/imports')
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'preview-status-001')
+      .send({ templateId })
+      .expect(201);
+
+    const before = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${created.body.id}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: 0 })
+      .expect(409);
+    expect(before.body.code).toBe('IMPORT.PREVIEW_NOT_ALLOWED');
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/imports/${created.body.id}/file`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .attach('file', Buffer.from('sku,sku\n1,2\n', 'utf8'), 'dup.csv')
+      .expect(422);
+
+    const afterFailed = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${created.body.id}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: 0 })
+      .expect(409);
+    expect(afterFailed.body.code).toBe('IMPORT.PREVIEW_NOT_ALLOWED');
+  });
+
+  it('blocks incomplete and stale mapping before opening storage', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-precond-001',
+    );
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const openObject = vi.spyOn(storage, 'openObject');
+
+    const incomplete = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: 0 })
+      .expect(409);
+    expect(incomplete.body.code).toBe('IMPORT.MAPPING_INCOMPLETE');
+    expect(openObject).not.toHaveBeenCalled();
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+      })
+      .expect(200);
+
+    const stale = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: 0 })
+      .expect(409);
+    expect(stale.body.code).toBe('IMPORT.MAPPING_REVISION_CONFLICT');
+    expect(openObject).not.toHaveBeenCalled();
+    openObject.mockRestore();
+
+    const mapping = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(mapping.body.revision).toBe(1);
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  });
+
+  it('returns 400 when expectedMappingRevision is outside the safe integer range', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-revision-range-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const openObject = vi.spyOn(storage, 'openObject');
+
+    const unsafe = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('X-Request-ID', 'req_preview_unsafe_rev')
+      .send({ expectedMappingRevision: Number.MAX_SAFE_INTEGER + 1 })
+      .expect(400);
+
+    expect(unsafe.body.code).toBe('VALIDATION.FAILED');
+    expect(unsafe.headers['x-request-id']).toBe('req_preview_unsafe_rev');
+    expect(openObject).not.toHaveBeenCalled();
+
+    const scientific = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: 1e100 })
+      .expect(400);
+    expect(scientific.body.code).toBe('VALIDATION.FAILED');
+    expect(openObject).not.toHaveBeenCalled();
+    openObject.mockRestore();
+
+    const mapping = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(mapping.body.revision).toBe(revision);
+  });
+
+  it('returns 409 when mapping changes during the object read', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-race-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstChunkSeen!: () => void;
+    const sawFirst = new Promise<void>((resolve) => {
+      firstChunkSeen = resolve;
+    });
+
+    storage.openObject = async (key: string) => {
+      const source = await originalOpen(key);
+      return Readable.from(
+        (async function* () {
+          let notified = false;
+          for await (const chunk of source) {
+            const buffer = Buffer.isBuffer(chunk)
+              ? chunk
+              : Buffer.from(chunk as string);
+            if (!notified && buffer.length > 0) {
+              notified = true;
+              yield buffer.subarray(0, 1);
+              firstChunkSeen();
+              await gate;
+              if (buffer.length > 1) {
+                yield buffer.subarray(1);
+              }
+              continue;
+            }
+            yield buffer;
+          }
+        })(),
+      );
+    };
+
+    try {
+      const pending = request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({ expectedMappingRevision: revision })
+        .then((response) => response);
+
+      await sawFirst;
+      await request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          expectedRevision: revision,
+          mappings: [
+            { columnPosition: 0, fieldKey: 'priceInCents' },
+            { columnPosition: 2, fieldKey: 'sku' },
+          ],
+        })
+        .expect(200);
+      release();
+
+      const response = await pending;
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('IMPORT.MAPPING_REVISION_CONFLICT');
+    } finally {
+      storage.openObject = originalOpen;
+    }
+  }, 20_000);
+
+  it('returns 503 when storage fails mid-read and keeps the uploaded object', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-io-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+
+    storage.openObject = async (key: string) => {
+      const source = await originalOpen(key);
+      const out = new Readable({
+        read() {
+          // push from async pump
+        },
+      });
+      void (async () => {
+        try {
+          for await (const chunk of source) {
+            const buffer = Buffer.isBuffer(chunk)
+              ? chunk
+              : Buffer.from(chunk as string);
+            if (buffer.length > 0) {
+              out.push(buffer.subarray(0, 1));
+            }
+            break;
+          }
+          source.destroy();
+          out.destroy(new Error('storage read failed'));
+        } catch (error) {
+          out.destroy(
+            error instanceof Error
+              ? error
+              : new Error('storage read failed'),
+          );
+        }
+      })();
+      return out;
+    };
+
+    try {
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({ expectedMappingRevision: revision })
+        .expect(503);
+      expect(response.body.code).toBe('IMPORT.PREVIEW_UNAVAILABLE');
+    } finally {
+      storage.openObject = originalOpen;
+    }
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('uploaded');
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  }, 20_000);
+
+  it('returns 503 when the storage stream closes before EOF and keeps the object', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-eof-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+
+    storage.openObject = async (key: string) => {
+      const source = await originalOpen(key);
+      let started = false;
+      const out = new Readable({
+        read() {
+          if (started) {
+            return;
+          }
+          started = true;
+          void (async () => {
+            try {
+              for await (const chunk of source) {
+                const buffer = Buffer.isBuffer(chunk)
+                  ? chunk
+                  : Buffer.from(chunk as string);
+                if (buffer.length > 0) {
+                  out.push(buffer.subarray(0, Math.min(buffer.length, 8)));
+                }
+                break;
+              }
+            } finally {
+              source.destroy();
+              if (!out.destroyed) {
+                out.destroy();
+              }
+            }
+          })();
+        },
+      });
+      out.once('close', () => {
+        if (!source.destroyed) {
+          source.destroy();
+        }
+      });
+      return out;
+    };
+
+    try {
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('X-Request-ID', 'req_preview_premature_close')
+        .send({ expectedMappingRevision: revision })
+        .expect(503);
+      expect(response.body.code).toBe('IMPORT.PREVIEW_UNAVAILABLE');
+      expect(response.headers['x-request-id']).toBe('req_preview_premature_close');
+      expect(response.body.traceId).toBe('req_preview_premature_close');
+    } finally {
+      storage.openObject = originalOpen;
+    }
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('uploaded');
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  }, 20_000);
+
+  it('detects a replaced stored object as FILE_CHANGED without deleting it', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-changed-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+    const stored = await prisma.importSession.findFirst({
+      where: { id: importId, organizationId: tenant.organizationId },
+    });
+    expect(stored?.storageObjectKey).toEqual(expect.any(String));
+
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    await storage.putObject(
+      stored!.storageObjectKey as string,
+      Readable.from([Buffer.from('sku,name,price\nZZ,Other,99\n', 'utf8')]),
+      { contentType: 'text/csv' },
+    );
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: revision })
+      .expect(409);
+    expect(response.body.code).toBe('IMPORT.FILE_CHANGED');
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('uploaded');
+  });
+
+  it('returns 422 when preview reads an inconsistent CSV without EOF and then succeeds after restore', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'preview-inconsistent-001',
+    );
+    const { revision } = await completeMapping(tenant.apiKey, importId);
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+
+    storage.openObject = async () => {
+      let pushed = false;
+      return new Readable({
+        read() {
+          if (pushed) {
+            return;
+          }
+          pushed = true;
+          this.push(Buffer.from('sku\nA,B\n', 'utf8'));
+        },
+      });
+    };
+
+    try {
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('X-Request-ID', 'req_preview_inconsistent_csv')
+        .send({ expectedMappingRevision: revision })
+        .expect(422);
+      expect(response.body.code).toBe('IMPORT.INVALID_CSV');
+      expect(response.headers['x-request-id']).toBe(
+        'req_preview_inconsistent_csv',
+      );
+      expect(response.body.traceId).toBe('req_preview_inconsistent_csv');
+    } finally {
+      storage.openObject = originalOpen;
+    }
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('uploaded');
+    const mapping = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(mapping.body.revision).toBe(revision);
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+
+    const preview = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: revision })
+      .expect(200);
+    expect(preview.body.summary.totalRows).toBeGreaterThan(0);
+    expect(preview.headers['cache-control']).toMatch(/no-store/);
+  }, 20_000);
+
+  it('keeps upload and preview consistent when CRLF is split across openObject chunks', async () => {
+    const tenant = await trackTenant();
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+    storage.openObject = async (key: string) =>
+      fragmentCrLfAfterFirstDataRecord(await originalOpen(key));
+
+    const csv = 'sku\r\nA\r\nB\r\n';
+    let importId: string;
+    let revision: number;
+
+    try {
+      const template = await request(app.getHttpServer())
+        .post('/api/v1/templates')
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          name: 'sku-only-crlf',
+          fields: [
+            { key: 'sku', label: 'SKU', type: 'string', required: true },
+          ],
+        })
+        .expect(201);
+
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/imports')
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('Idempotency-Key', 'crlf-fragment-upload-001')
+        .send({ templateId: template.body.id })
+        .expect(201);
+
+      const uploaded = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${created.body.id}/file`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .attach('file', Buffer.from(csv, 'utf8'), {
+          filename: 'crlf.csv',
+          contentType: 'text/csv',
+        })
+        .expect(201);
+
+      expect(uploaded.body.dataRowCount).toBe(2);
+      expect(uploaded.body.columns).toEqual([{ name: 'sku', position: 0 }]);
+      importId = created.body.id as string;
+
+      const mapped = await request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          expectedRevision: 0,
+          mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+        })
+        .expect(200);
+      revision = mapped.body.revision as number;
+
+      const fragmentedPreview = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('X-Request-ID', 'req_crlf_fragment_preview')
+        .send({ expectedMappingRevision: revision })
+        .expect(200);
+
+      expect(fragmentedPreview.body.summary).toEqual({
+        totalRows: 2,
+        validRows: 2,
+        invalidRows: 0,
+      });
+      expect(fragmentedPreview.body.rows).toEqual([
+        {
+          recordNumber: 1,
+          valid: true,
+          data: { sku: 'A' },
+          errors: [],
+        },
+        {
+          recordNumber: 2,
+          valid: true,
+          data: { sku: 'B' },
+          errors: [],
+        },
+      ]);
+    } finally {
+      storage.openObject = originalOpen;
+    }
+
+    const restoredPreview = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId!}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: revision! })
+      .expect(200);
+
+    expect(restoredPreview.body.summary).toEqual({
+      totalRows: 2,
+      validRows: 2,
+      invalidRows: 0,
+    });
+    expect(restoredPreview.body.rows).toEqual([
+      {
+        recordNumber: 1,
+        valid: true,
+        data: { sku: 'A' },
+        errors: [],
+      },
+      {
+        recordNumber: 2,
+        valid: true,
+        data: { sku: 'B' },
+        errors: [],
+      },
+    ]);
+    expect(restoredPreview.body.code).toBeUndefined();
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  }, 20_000);
+
+  it('keeps upload and preview consistent when an escaped quote is split across openObject chunks', async () => {
+    const tenant = await trackTenant();
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const originalOpen = storage.openObject.bind(storage);
+
+    // Decodes to a single sku value: He said "Hi"
+    const csv = 'sku\r\n"He said ""Hi"""\r\n';
+    const csvBytes = Buffer.from(csv, 'utf8');
+    const pairIndex = csvBytes.indexOf('""Hi');
+    expect(pairIndex).toBeGreaterThan(0);
+    // Land the split between the two quote bytes of the escaped pair.
+    const splitOffset = pairIndex + 1;
+
+    storage.openObject = async (key: string) =>
+      fragmentAtByteOffset(await originalOpen(key), splitOffset);
+
+    let importId: string;
+    let revision: number;
+
+    try {
+      const template = await request(app.getHttpServer())
+        .post('/api/v1/templates')
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          name: 'sku-only-escaped-quote',
+          fields: [
+            { key: 'sku', label: 'SKU', type: 'string', required: true },
+          ],
+        })
+        .expect(201);
+
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/imports')
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('Idempotency-Key', 'escaped-quote-fragment-upload-001')
+        .send({ templateId: template.body.id })
+        .expect(201);
+
+      const uploaded = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${created.body.id}/file`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .attach('file', csvBytes, {
+          filename: 'escaped-quote.csv',
+          contentType: 'text/csv',
+        })
+        .expect(201);
+
+      expect(uploaded.body.dataRowCount).toBe(1);
+      importId = created.body.id as string;
+
+      const mapped = await request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          expectedRevision: 0,
+          mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+        })
+        .expect(200);
+      revision = mapped.body.revision as number;
+
+      const fragmentedPreview = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('X-Request-ID', 'req_escaped_quote_fragment_preview')
+        .send({ expectedMappingRevision: revision })
+        .expect(200);
+
+      expect(fragmentedPreview.body.rows).toEqual([
+        {
+          recordNumber: 1,
+          valid: true,
+          data: { sku: 'He said "Hi"' },
+          errors: [],
+        },
+      ]);
+    } finally {
+      storage.openObject = originalOpen;
+    }
+
+    const restoredPreview = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${importId!}/preview`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedMappingRevision: revision! })
+      .expect(200);
+
+    expect(restoredPreview.body.rows).toEqual([
+      {
+        recordNumber: 1,
+        valid: true,
+        data: { sku: 'He said "Hi"' },
+        errors: [],
+      },
+    ]);
+    expect(restoredPreview.body.code).toBeUndefined();
+    expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
+  }, 20_000);
 });
