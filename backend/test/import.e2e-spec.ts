@@ -8,6 +8,7 @@ import {
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { vi } from 'vitest';
 import { AppModule } from '../src/app.module.js';
 import {
   configureHttpApp,
@@ -825,9 +826,13 @@ describe('Import sessions (e2e)', () => {
 
     expect(response.body.paths['/api/v1/imports']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/file']).toBeDefined();
+    expect(response.body.paths['/api/v1/imports/{importId}/mapping']).toBeDefined();
     const spec = JSON.stringify(response.body);
     expect(spec).toContain('IMPORT.FILE_ALREADY_UPLOADED');
     expect(spec).toContain('IMPORT.UPLOAD_NOT_ALLOWED');
+    expect(spec).toContain('IMPORT.MAPPING_REVISION_CONFLICT');
+    expect(spec).toContain('IMPORT.MAPPING_NOT_ALLOWED');
+    expect(spec).toContain('IMPORT.MAPPING_INVALID');
     const createParams =
       response.body.paths['/api/v1/imports'].post.parameters ?? [];
     expect(
@@ -835,5 +840,403 @@ describe('Import sessions (e2e)', () => {
         (parameter: { name?: string }) => parameter.name === 'Idempotency-Key',
       ),
     ).toBe(true);
+  });
+
+  async function createUploadedSession(
+    apiKey: string,
+    idempotencyKey: string,
+    csv = 'sku,name,price\nA1,Widget,10\n',
+  ): Promise<{ importId: string; templateId: string }> {
+    const templateId = await createTemplate(apiKey);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/imports')
+      .set('Authorization', `Bearer ${apiKey}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ templateId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/imports/${created.body.id}/file`)
+      .set('Authorization', `Bearer ${apiKey}`)
+      .attach('file', Buffer.from(csv, 'utf8'), 'products.csv')
+      .expect(201);
+
+    return { importId: created.body.id as string, templateId };
+  }
+
+  it('returns an empty mapping draft after upload', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-empty-001',
+    );
+
+    const response = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
+    expect(response.body).toEqual({
+      importId,
+      revision: 0,
+      mappings: [],
+      isComplete: false,
+      missingRequiredFields: ['sku', 'priceInCents'],
+    });
+  });
+
+  it('saves a partial mapping, completes it, clears it, and preserves no-op revision', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-flow-001',
+    );
+
+    const partial = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+      })
+      .expect(200);
+
+    expect(partial.body).toMatchObject({
+      importId,
+      revision: 1,
+      mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+      isComplete: false,
+      missingRequiredFields: ['priceInCents'],
+    });
+
+    const afterGet = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(afterGet.body).toEqual(partial.body);
+
+    const complete = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 1,
+        mappings: [
+          { columnPosition: 2, fieldKey: 'priceInCents' },
+          { columnPosition: 0, fieldKey: 'sku' },
+        ],
+      })
+      .expect(200);
+
+    expect(complete.body).toMatchObject({
+      revision: 2,
+      isComplete: true,
+      missingRequiredFields: [],
+      mappings: [
+        { columnPosition: 0, fieldKey: 'sku' },
+        { columnPosition: 2, fieldKey: 'priceInCents' },
+      ],
+    });
+
+    const noop = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 2,
+        mappings: [
+          { columnPosition: 0, fieldKey: 'sku' },
+          { columnPosition: 2, fieldKey: 'priceInCents' },
+        ],
+      })
+      .expect(200);
+    expect(noop.body.revision).toBe(2);
+
+    const cleared = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedRevision: 2, mappings: [] })
+      .expect(200);
+    expect(cleared.body).toMatchObject({
+      revision: 3,
+      mappings: [],
+      isComplete: false,
+      missingRequiredFields: ['sku', 'priceInCents'],
+    });
+  });
+
+  it('rejects stale revisions and keeps the previous mapping', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-stale-001',
+    );
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+      })
+      .expect(200);
+
+    const conflict = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 2, fieldKey: 'priceInCents' }],
+      })
+      .expect(409);
+
+    expect(conflict.body.code).toBe('IMPORT.MAPPING_REVISION_CONFLICT');
+
+    const current = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(current.body).toMatchObject({
+      revision: 1,
+      mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+    });
+  });
+
+  it('allows only one concurrent writer for the same revision', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-race-001',
+    );
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          expectedRevision: 0,
+          mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+        }),
+      request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({
+          expectedRevision: 0,
+          mappings: [{ columnPosition: 2, fieldKey: 'priceInCents' }],
+        }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const winner = first.status === 200 ? first : second;
+    const loser = first.status === 409 ? first : second;
+    expect(loser.body.code).toBe('IMPORT.MAPPING_REVISION_CONFLICT');
+
+    const current = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+
+    expect(current.body.revision).toBe(1);
+    expect(current.body.mappings).toEqual(winner.body.mappings);
+  });
+
+  it('rejects invalid associations without changing revision', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-invalid-001',
+    );
+
+    const response = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 0, fieldKey: 'unknownField' }],
+      })
+      .expect(422);
+
+    expect(response.body.code).toBe('IMPORT.MAPPING_INVALID');
+
+    const current = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(current.body.revision).toBe(0);
+    expect(current.body.mappings).toEqual([]);
+  });
+
+  it('rejects nested arrays in mappings with 400 and preserves a saved mapping', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-structure-001',
+    );
+
+    const saved = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+      })
+      .expect(200);
+
+    expect(saved.body.revision).toBe(1);
+    expect(saved.body.mappings).toEqual([
+      { columnPosition: 0, fieldKey: 'sku' },
+    ]);
+
+    const nestedEmpty = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('X-Request-ID', 'req_mapping_nested_empty')
+      .send({ expectedRevision: 1, mappings: [[]] })
+      .expect(400);
+
+    expect(nestedEmpty.body.code).toBe('VALIDATION.FAILED');
+    expect(nestedEmpty.headers['x-request-id']).toBe('req_mapping_nested_empty');
+
+    const nestedAssoc = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 1,
+        mappings: [[{ columnPosition: 0, fieldKey: 'sku' }]],
+      })
+      .expect(400);
+
+    expect(nestedAssoc.body.code).toBe('VALIDATION.FAILED');
+
+    const current = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+
+    expect(current.body).toEqual(saved.body);
+    expect(current.body.revision).toBe(1);
+    expect(current.body.mappings).toEqual([
+      { columnPosition: 0, fieldKey: 'sku' },
+    ]);
+  });
+
+  it('returns 404 for another organization and 401 without auth', async () => {
+    const tenantA = await trackTenant();
+    const tenantB = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenantA.apiKey,
+      'mapping-tenant-001',
+    );
+
+    const cross = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenantB.apiKey}`)
+      .expect(404);
+    expect(cross.body.code).toBe('IMPORT.NOT_FOUND');
+
+    const unauth = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .send({ expectedRevision: 0, mappings: [] })
+      .expect(401);
+    expect(unauth.body.code).toBe('AUTH.MISSING_BEARER');
+  });
+
+  it('rejects mapping before upload and after upload_failed', async () => {
+    const tenant = await trackTenant();
+    const templateId = await createTemplate(tenant.apiKey);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/imports')
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'mapping-status-001')
+      .send({ templateId })
+      .expect(201);
+
+    const beforeUpload = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${created.body.id}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(409);
+    expect(beforeUpload.body.code).toBe('IMPORT.MAPPING_NOT_ALLOWED');
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/imports/${created.body.id}/file`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .attach('file', Buffer.from('sku,sku\n1,2\n', 'utf8'), 'dup.csv')
+      .expect(422);
+
+    const failed = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${created.body.id}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(failed.body.status).toBe('upload_failed');
+
+    const afterFailed = await request(app.getHttpServer())
+      .put(`/api/v1/imports/${created.body.id}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({ expectedRevision: 0, mappings: [] })
+      .expect(409);
+    expect(afterFailed.body.code).toBe('IMPORT.MAPPING_NOT_ALLOWED');
+  });
+
+  it('does not call object storage for mapping GET/PUT and survives app restart', async () => {
+    const tenant = await trackTenant();
+    const { importId } = await createUploadedSession(
+      tenant.apiKey,
+      'mapping-storage-001',
+    );
+
+    const storage = app.get<ObjectStorage>(OBJECT_STORAGE);
+    const putObject = vi.spyOn(storage, 'putObject');
+    const openObject = vi.spyOn(storage, 'openObject');
+    const deleteObject = vi.spyOn(storage, 'deleteObject');
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedRevision: 0,
+        mappings: [
+          { columnPosition: 0, fieldKey: 'sku' },
+          { columnPosition: 2, fieldKey: 'priceInCents' },
+        ],
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/imports/${importId}/mapping`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+
+    expect(putObject).not.toHaveBeenCalled();
+    expect(openObject).not.toHaveBeenCalled();
+    expect(deleteObject).not.toHaveBeenCalled();
+    putObject.mockRestore();
+    openObject.mockRestore();
+    deleteObject.mockRestore();
+
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    const restarted = moduleFixture.createNestApplication();
+    configureHttpApp(restarted, env);
+    await restarted.init();
+    registerNotFoundFallback(restarted);
+
+    try {
+      const response = await request(restarted.getHttpServer())
+        .get(`/api/v1/imports/${importId}/mapping`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .expect(200);
+      expect(response.body).toMatchObject({
+        revision: 1,
+        isComplete: true,
+        mappings: [
+          { columnPosition: 0, fieldKey: 'sku' },
+          { columnPosition: 2, fieldKey: 'priceInCents' },
+        ],
+      });
+    } finally {
+      await restarted.close();
+    }
   });
 });
