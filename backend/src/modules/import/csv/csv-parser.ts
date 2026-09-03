@@ -20,5 +20,10 @@ export type CsvParseResult = {
   encoding: 'utf-8';
 };
 
+export type CsvParseHandlers = {
+  onHeader?: (columns: string[]) => void | Promise<void>;
+  onRecord?: (row: string[], recordNumber: number) => void | Promise<void>;
+};
+
 export { parseCsvStream } from './parse-csv-stream.js';
 export { detectDelimiter } from './detect-delimiter.js';

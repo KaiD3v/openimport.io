@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CsvParseError,
   parseCsvStream,
@@ -616,5 +616,594 @@ describe('parseCsvStream', () => {
       code: 'IMPORT.INVALID_CSV',
       message: expect.stringMatching(/scan size/i),
     });
+  });
+
+  it('awaits record callbacks sequentially and does not accumulate every row', async () => {
+    const events: string[] = [];
+    let maxHeld = 0;
+    const held: string[][] = [];
+
+    await parseCsvStream(streamOf(['sku,name\n', 'A1,a\n', 'A2,b\n', 'A3,c\n']), limits, {
+      onHeader: async (columns) => {
+        events.push(`header:${columns.join('|')}`);
+      },
+      onRecord: async (row, recordNumber) => {
+        events.push(`start:${recordNumber}`);
+        held.push(row);
+        maxHeld = Math.max(maxHeld, held.length);
+        await new Promise((resolve) => {
+          setTimeout(resolve, 15);
+        });
+        events.push(`end:${recordNumber}`);
+        held.pop();
+      },
+    });
+
+    expect(events).toEqual([
+      'header:sku|name',
+      'start:1',
+      'end:1',
+      'start:2',
+      'end:2',
+      'start:3',
+      'end:3',
+    ]);
+    expect(maxHeld).toBe(1);
+  });
+
+  it('propagates a consumer failure from onRecord', async () => {
+    await expect(
+      parseCsvStream(streamOf(['sku,name\n', 'A1,a\n', 'A2,b\n']), limits, {
+        onRecord: async () => {
+          throw new Error('consumer failed');
+        },
+      }),
+    ).rejects.toThrow('consumer failed');
+  });
+
+  function openEndedStream(payload: string | Buffer): Readable {
+    let pushed = false;
+    const data = Buffer.isBuffer(payload)
+      ? payload
+      : Buffer.from(payload, 'utf8');
+    return new Readable({
+      read() {
+        if (pushed) {
+          return;
+        }
+        pushed = true;
+        this.push(data);
+      },
+    });
+  }
+
+  function rejectIfHung<T>(promise: Promise<T>, label: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(`${label} hung waiting for EOF`)),
+          1000,
+        );
+      }),
+    ]);
+  }
+
+  it('rejects an oversized field without waiting for source EOF', async () => {
+    const source = openEndedStream('sku\nABCDEFGHIJK\n');
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, { ...limits, maxFieldBytes: 8 }),
+        'oversized field',
+      ),
+    ).rejects.toMatchObject({
+      code: 'IMPORT.INVALID_CSV',
+      message: expect.stringMatching(/field size/i),
+    });
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('rejects a row-limit overflow without waiting for source EOF', async () => {
+    const source = openEndedStream('sku\nA\nB\n');
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, { ...limits, maxDataRows: 1 }),
+        'row limit',
+      ),
+    ).rejects.toMatchObject({
+      code: 'IMPORT.INVALID_CSV',
+      message: expect.stringMatching(/data rows/i),
+    });
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('rejects an inconsistent row without waiting for source EOF', async () => {
+    const source = openEndedStream('sku\nA,B\n');
+    await expect(
+      rejectIfHung(parseCsvStream(source, limits), 'inconsistent columns'),
+    ).rejects.toMatchObject({
+      code: 'IMPORT.INVALID_CSV',
+      message: expect.stringMatching(/inconsistent/i),
+    });
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('rejects a duplicate header without waiting for source EOF', async () => {
+    const source = openEndedStream('sku,sku\nA,B\n');
+    await expect(
+      rejectIfHung(parseCsvStream(source, limits), 'duplicate header'),
+    ).rejects.toMatchObject({
+      code: 'IMPORT.INVALID_CSV',
+      message: expect.stringMatching(/duplicate/i),
+    });
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('propagates a synchronous onHeader failure without waiting for source EOF', async () => {
+    const source = openEndedStream('sku,name\nA1,a\n');
+    let called = false;
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, limits, {
+          onHeader: () => {
+            called = true;
+            throw new Error('header callback failed');
+          },
+        }),
+        'sync onHeader',
+      ),
+    ).rejects.toThrow('header callback failed');
+    expect(called).toBe(true);
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('propagates an async onHeader failure without waiting for source EOF', async () => {
+    const source = openEndedStream('sku,name\nA1,a\n');
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, limits, {
+          onHeader: async () => {
+            await Promise.resolve();
+            throw new Error('async header callback failed');
+          },
+        }),
+        'async onHeader',
+      ),
+    ).rejects.toThrow('async header callback failed');
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('propagates a synchronous onRecord failure without waiting for source EOF', async () => {
+    const source = openEndedStream('sku,name\nA1,a\nA2,b\n');
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, limits, {
+          onRecord: () => {
+            throw new Error('record callback failed');
+          },
+        }),
+        'sync onRecord',
+      ),
+    ).rejects.toThrow('record callback failed');
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('propagates an async onRecord failure without waiting for source EOF', async () => {
+    const source = openEndedStream('sku,name\nA1,a\nA2,b\n');
+    await expect(
+      rejectIfHung(
+        parseCsvStream(source, limits, {
+          onRecord: async () => {
+            await Promise.resolve();
+            throw new Error('async record callback failed');
+          },
+        }),
+        'async onRecord',
+      ),
+    ).rejects.toThrow('async record callback failed');
+    expect(source.destroyed).toBe(true);
+  });
+
+  it('propagates a late stream error while a record callback is in flight', async () => {
+    const input = Readable.from(
+      (async function* () {
+        yield Buffer.from('sku,name\nA1,a\n', 'utf8');
+        await new Promise((resolve) => {
+          setTimeout(resolve, 40);
+        });
+        yield Buffer.from([0xff]);
+      })(),
+    );
+
+    await expect(
+      parseCsvStream(input, limits, {
+        onRecord: async () => {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 20);
+          });
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'IMPORT.INVALID_CSV' });
+  });
+
+  async function collectRecords(
+    chunks: Array<string | Buffer>,
+    parseLimits: CsvParseLimits = limits,
+  ): Promise<{ columns: string[]; rows: string[][]; dataRowCount: number }> {
+    const rows: string[][] = [];
+    let columns: string[] = [];
+    const result = await parseCsvStream(
+      Readable.from(
+        chunks.map((chunk) =>
+          Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, 'utf8'),
+        ),
+      ),
+      parseLimits,
+      {
+        onHeader: (header) => {
+          columns = [...header];
+        },
+        onRecord: (row) => {
+          rows.push([...row]);
+        },
+      },
+    );
+    return { columns, rows, dataRowCount: result.dataRowCount };
+  }
+
+  function everyTwoChunkSplits(bytes: Buffer): Buffer[][] {
+    const splits: Buffer[][] = [];
+    for (let index = 1; index < bytes.length; index += 1) {
+      splits.push([bytes.subarray(0, index), bytes.subarray(index)]);
+    }
+    return splits;
+  }
+
+  it('keeps CRLF split across chunks as one terminator', async () => {
+    const parsed = await collectRecords([
+      Buffer.from('sku\r\nA\r', 'utf8'),
+      Buffer.from('\nB\r\n', 'utf8'),
+    ]);
+    expect(parsed.columns).toEqual(['sku']);
+    expect(parsed.rows).toEqual([['A'], ['B']]);
+    expect(parsed.dataRowCount).toBe(2);
+  });
+
+  it('does not reject a valid CRLF CSV when the split lands between CR and LF', async () => {
+    const parsed = await collectRecords([
+      Buffer.from('sku,name\r\nA,B\r', 'utf8'),
+      Buffer.from('\nC,D\r\n', 'utf8'),
+    ]);
+    expect(parsed.columns).toEqual(['sku', 'name']);
+    expect(parsed.rows).toEqual([
+      ['A', 'B'],
+      ['C', 'D'],
+    ]);
+    expect(parsed.dataRowCount).toBe(2);
+  });
+
+  it('parses CRLF fixtures identically for every two-chunk split', async () => {
+    const fixtures: Array<{
+      label: string;
+      bytes: Buffer;
+      columns: string[];
+      rows: string[][];
+    }> = [
+      {
+        label: 'single-column CRLF',
+        bytes: Buffer.from('sku\r\nA\r\nB\r\n', 'utf8'),
+        columns: ['sku'],
+        rows: [['A'], ['B']],
+      },
+      {
+        label: 'multi-column CRLF',
+        bytes: Buffer.from('sku,name\r\nA,B\r\nC,D\r\n', 'utf8'),
+        columns: ['sku', 'name'],
+        rows: [
+          ['A', 'B'],
+          ['C', 'D'],
+        ],
+      },
+      {
+        label: 'semicolon CRLF',
+        bytes: Buffer.from('sku;name\r\nA;B\r\nC;D\r\n', 'utf8'),
+        columns: ['sku', 'name'],
+        rows: [
+          ['A', 'B'],
+          ['C', 'D'],
+        ],
+      },
+      {
+        label: 'quoted CRLF content',
+        bytes: Buffer.from('sku,note\r\nA,"x\r\ny"\r\nB,z\r\n', 'utf8'),
+        columns: ['sku', 'note'],
+        rows: [
+          ['A', 'x\r\ny'],
+          ['B', 'z'],
+        ],
+      },
+      {
+        label: 'escaped quotes CRLF',
+        bytes: Buffer.from('sku,note\r\nA,"he said ""hi"""\r\nB,z\r\n', 'utf8'),
+        columns: ['sku', 'note'],
+        rows: [
+          ['A', 'he said "hi"'],
+          ['B', 'z'],
+        ],
+      },
+      {
+        label: 'LF without trailing terminator on last row',
+        bytes: Buffer.from('sku\nA\nB', 'utf8'),
+        columns: ['sku'],
+        rows: [['A'], ['B']],
+      },
+      {
+        label: 'CRLF without trailing terminator on last row',
+        bytes: Buffer.from('sku\r\nA\r\nB', 'utf8'),
+        columns: ['sku'],
+        rows: [['A'], ['B']],
+      },
+      {
+        label: 'BOM + CRLF',
+        bytes: Buffer.concat([
+          Buffer.from([0xef, 0xbb, 0xbf]),
+          Buffer.from('sku\r\nA\r\nB\r\n', 'utf8'),
+        ]),
+        columns: ['sku'],
+        rows: [['A'], ['B']],
+      },
+      {
+        label: 'UTF-8 multibyte field',
+        bytes: Buffer.from('sku,name\nA,café\nB,naïve\n', 'utf8'),
+        columns: ['sku', 'name'],
+        rows: [
+          ['A', 'café'],
+          ['B', 'naïve'],
+        ],
+      },
+      {
+        label: 'LF single column',
+        bytes: Buffer.from('sku\nA\nB\n', 'utf8'),
+        columns: ['sku'],
+        rows: [['A'], ['B']],
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const expected = await collectRecords([fixture.bytes]);
+      expect(expected.columns, fixture.label).toEqual(fixture.columns);
+      expect(expected.rows, fixture.label).toEqual(fixture.rows);
+      expect(expected.dataRowCount, fixture.label).toBe(fixture.rows.length);
+
+      for (const chunks of everyTwoChunkSplits(fixture.bytes)) {
+        const parsed = await collectRecords(chunks);
+        expect(parsed.columns, `${fixture.label} split`).toEqual(fixture.columns);
+        expect(parsed.rows, `${fixture.label} split`).toEqual(fixture.rows);
+        expect(parsed.dataRowCount, `${fixture.label} split`).toBe(
+          fixture.rows.length,
+        );
+      }
+
+      const oneByte = Array.from(fixture.bytes, (byte) => Buffer.from([byte]));
+      const parsedOneByte = await collectRecords(oneByte);
+      expect(parsedOneByte.rows, `${fixture.label} one-byte`).toEqual(
+        fixture.rows,
+      );
+
+      const mid = Math.floor(fixture.bytes.length / 2);
+      const irregular = [
+        fixture.bytes.subarray(0, 1),
+        fixture.bytes.subarray(1, mid),
+        fixture.bytes.subarray(mid, fixture.bytes.length - 1),
+        fixture.bytes.subarray(fixture.bytes.length - 1),
+      ].filter((part) => part.length > 0);
+      const parsedIrregular = await collectRecords(irregular);
+      expect(parsedIrregular.rows, `${fixture.label} irregular`).toEqual(
+        fixture.rows,
+      );
+    }
+  });
+
+  it('keeps CRLF integrity through HashAndLimitTransform chunk boundaries', async () => {
+    const { HashAndLimitTransform } = await import(
+      '../hash-and-limit.transform.js'
+    );
+    const { pipeline } = await import('node:stream/promises');
+    const chunks = [
+      Buffer.from('sku\r\nA\r', 'utf8'),
+      Buffer.from('\nB\r\n', 'utf8'),
+    ];
+    const hasher = new HashAndLimitTransform(1_000_000);
+    const rows: string[][] = [];
+    const parsePromise = parseCsvStream(hasher, limits, {
+      onRecord: (row) => {
+        rows.push([...row]);
+      },
+    });
+    const feedPromise = pipeline(Readable.from(chunks), hasher);
+    void parsePromise.then(
+      () => undefined,
+      () => undefined,
+    );
+    void feedPromise.then(
+      () => undefined,
+      () => undefined,
+    );
+    const result = await parsePromise;
+    await feedPromise;
+    expect(result.dataRowCount).toBe(2);
+    expect(rows).toEqual([['A'], ['B']]);
+  });
+
+  it('accepts a field of exactly maxFieldBytes escaped quotes regardless of fragmentation', async () => {
+    const q = String.fromCharCode(34);
+    // Decoded field is q.repeat(100): 100 literal quote characters, exactly
+    // at maxFieldBytes. On the wire each is doubled ("" -> "), so the raw
+    // field representation is 202 bytes (1 wrapping quote + 200 escaped +
+    // 1 wrapping quote).
+    const csv = Buffer.from(`sku\n${q}${q.repeat(200)}${q}\n`, 'utf8');
+    const smallLimits: CsvParseLimits = {
+      maxDataRows: 10,
+      maxColumns: 1,
+      maxFieldBytes: 100,
+    };
+    const expectedField = q.repeat(100);
+
+    const single = await collectRecords([csv], smallLimits);
+    expect(single.rows).toEqual([[expectedField]]);
+    expect(single.dataRowCount).toBe(1);
+
+    const cutAt150 = await collectRecords(
+      [csv.subarray(0, 150), csv.subarray(150)],
+      smallLimits,
+    );
+    expect(cutAt150.rows).toEqual([[expectedField]]);
+
+    for (const chunks of everyTwoChunkSplits(csv)) {
+      const parsed = await collectRecords(chunks, smallLimits);
+      expect(parsed.rows).toEqual([[expectedField]]);
+    }
+
+    const oneByte = Array.from(csv, (byte) => Buffer.from([byte]));
+    expect((await collectRecords(oneByte, smallLimits)).rows).toEqual([
+      [expectedField],
+    ]);
+
+    const mid = Math.floor(csv.length / 2);
+    const irregular = [
+      csv.subarray(0, 1),
+      csv.subarray(1, mid),
+      csv.subarray(mid, csv.length - 1),
+      csv.subarray(csv.length - 1),
+    ].filter((part) => part.length > 0);
+    expect((await collectRecords(irregular, smallLimits)).rows).toEqual([
+      [expectedField],
+    ]);
+  });
+
+  it('rejects a field one byte above maxFieldBytes regardless of fragmentation', async () => {
+    const q = String.fromCharCode(34);
+    // Decoded field is q.repeat(101): one quote character over the limit.
+    const csv = Buffer.from(`sku\n${q}${q.repeat(202)}${q}\n`, 'utf8');
+    const smallLimits: CsvParseLimits = {
+      maxDataRows: 10,
+      maxColumns: 1,
+      maxFieldBytes: 100,
+    };
+
+    await expect(collectRecords([csv], smallLimits)).rejects.toMatchObject({
+      code: 'IMPORT.INVALID_CSV',
+    });
+    await expect(
+      collectRecords([csv.subarray(0, 150), csv.subarray(150)], smallLimits),
+    ).rejects.toMatchObject({ code: 'IMPORT.INVALID_CSV' });
+    await expect(
+      collectRecords(
+        Array.from(csv, (byte) => Buffer.from([byte])),
+        smallLimits,
+      ),
+    ).rejects.toMatchObject({ code: 'IMPORT.INVALID_CSV' });
+  });
+
+  it('accepts the default-limits worst case CSV whole and split mid-field', async () => {
+    // Independent review repro: 50 columns, 65536-byte fields; 32 fields are
+    // entirely quote characters at exactly the field-size limit (raw
+    // representation doubles via escaping) and 18 are a single character.
+    const q = '"';
+    const maxFieldBytes = 65_536;
+    const bigField = q + q.repeat(maxFieldBytes * 2) + q; // decodes to 65536 quotes
+    const smallField = 'v';
+    const columnCount = 50;
+    const header = Array.from({ length: columnCount }, (_, i) => `c${i}`).join(
+      ',',
+    );
+    const fields = [
+      ...Array.from({ length: 32 }, () => bigField),
+      ...Array.from({ length: 18 }, () => smallField),
+    ];
+    expect(fields).toHaveLength(columnCount);
+    const csv = Buffer.from(`${header}\n${fields.join(',')}\n`, 'utf8');
+    expect(csv.length).toBeGreaterThan(4_000_000);
+
+    const defaultLimits: CsvParseLimits = {
+      maxDataRows: 10,
+      maxColumns: columnCount,
+      maxFieldBytes,
+    };
+
+    const whole = await collectRecords([csv], defaultLimits);
+    expect(whole.dataRowCount).toBe(1);
+    expect(whole.rows[0]).toHaveLength(columnCount);
+    expect(whole.rows[0]?.[0]).toBe(q.repeat(maxFieldBytes));
+    expect(whole.rows[0]?.[32]).toBe('v');
+
+    // Split at a few representative points inside the escaped-quote run of
+    // the first field: just after the opening quote, mid-run, between two
+    // bytes of an escaped pair, and just before the closing quote.
+    const headerLen = header.length + 1;
+    const splitOffsets = [
+      headerLen + 2,
+      headerLen + 2 + maxFieldBytes,
+      headerLen + 2 + maxFieldBytes * 2 - 1,
+      headerLen + 1 + bigField.length,
+    ];
+    for (const offset of splitOffsets) {
+      const split = await collectRecords(
+        [csv.subarray(0, offset), csv.subarray(offset)],
+        defaultLimits,
+      );
+      expect(split.dataRowCount, `offset ${offset}`).toBe(1);
+      expect(split.rows[0]?.[0], `offset ${offset}`).toBe(
+        q.repeat(maxFieldBytes),
+      );
+      expect(split.rows[0]?.[32], `offset ${offset}`).toBe('v');
+    }
+  });
+
+  it('scans a long escaped-quote field incrementally without quadratic Buffer.concat cost', async () => {
+    const sizes = [8 * 1024, 16 * 1024, 32 * 1024];
+    const concatBytesBySize: number[] = [];
+    const originalConcat = Buffer.concat.bind(Buffer);
+
+    for (const contentBytes of sizes) {
+      const rawField = `"${'""'.repeat(contentBytes)}"`;
+      const csv = Buffer.from(`sku\n${rawField}\n`, 'utf8');
+      const chunks = Array.from(csv, (byte) => Buffer.from([byte]));
+
+      let concatBytes = 0;
+      const spy = vi
+        .spyOn(Buffer, 'concat')
+        .mockImplementation((list: readonly Uint8Array[], totalLength?: number) => {
+          concatBytes += list.reduce((sum, part) => sum + part.length, 0);
+          return originalConcat(list, totalLength);
+        });
+
+      try {
+        const result = await parseCsvStream(Readable.from(chunks), {
+          maxDataRows: 1,
+          maxColumns: 1,
+          maxFieldBytes: contentBytes,
+        });
+        expect(result.dataRowCount).toBe(1);
+      } finally {
+        spy.mockRestore();
+      }
+
+      concatBytesBySize.push(concatBytes);
+    }
+
+    // A quadratic scanner re-copies the whole accumulated record on every
+    // one-byte chunk, so total Buffer.concat input would grow roughly with
+    // the square of the record size (the independent review measured ~537MB
+    // of copies for a 32KiB field). An incremental scanner concatenates each
+    // record's bytes only once at emission, so total copying stays within a
+    // small constant multiple of the record size and grows linearly.
+    for (let i = 0; i < sizes.length; i += 1) {
+      expect(concatBytesBySize[i], `size ${sizes[i]}`).toBeLessThan(
+        sizes[i]! * 10,
+      );
+    }
+    const growthFor4x = concatBytesBySize[2]! / concatBytesBySize[0]!;
+    expect(growthFor4x).toBeLessThan(8);
   });
 });
