@@ -4,9 +4,9 @@ OpenImport is an import API. This repository contains independent `backend/` and
 
 ## Backend
 
-The NestJS backend covers API-key auth, import templates, CSV import sessions, and manual column-to-field mapping.
+The NestJS backend covers API-key auth, import templates, CSV import sessions, manual column-to-field mapping, and synchronous preview with `pt-BR-v1` normalization.
 
-See [`backend/README.md`](backend/README.md) for local setup with PostgreSQL and MinIO.
+See [`backend/README.md`](backend/README.md) for a quick local setup with PostgreSQL and MinIO, and the versioned [technical documentation index](backend/docs/README.md) for HTTP contracts, frontend integration, CSV behavior, architecture, operations, and tests.
 
 ## Frontend
 
