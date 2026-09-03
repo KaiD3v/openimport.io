@@ -3,7 +3,10 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -31,22 +34,29 @@ import {
 import { CurrentOrganization } from '../../core/auth/current-organization.decorator.js';
 import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
 import { CreateImportSessionDto } from './dto/create-import-session.dto.js';
+import { CreateImportPreviewDto } from './dto/create-import-preview.dto.js';
 import { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
+import { ImportPreviewResponseDto } from './dto/import-preview-response.dto.js';
 import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
 import {
   IdempotencyKeyReusedErrorDto,
   ImportFileAlreadyUploadedErrorDto,
+  ImportFileChangedErrorDto,
   ImportFileTooLargeErrorDto,
   ImportInvalidCsvErrorDto,
+  ImportMappingIncompleteErrorDto,
   ImportMappingInvalidErrorDto,
   ImportMappingNotAllowedErrorDto,
   ImportMappingRevisionConflictErrorDto,
   ImportNotFoundErrorDto,
+  ImportPreviewNotAllowedErrorDto,
+  ImportPreviewUnavailableErrorDto,
   ImportUploadNotAllowedErrorDto,
   TemplateNotFoundErrorDto,
 } from './dto/import-error-response.dto.js';
 import { PutImportMappingDto } from './dto/put-import-mapping.dto.js';
 import { ImportService } from './import.service.js';
+import { PreviewService } from './preview/preview.service.js';
 
 const importIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
@@ -69,10 +79,17 @@ const importIdPipe = new ParseUUIDPipe({
   ImportUploadNotAllowedErrorDto,
   ImportMappingNotAllowedErrorDto,
   ImportMappingRevisionConflictErrorDto,
+  ImportPreviewNotAllowedErrorDto,
+  ImportMappingIncompleteErrorDto,
+  ImportFileChangedErrorDto,
+  ImportPreviewUnavailableErrorDto,
 )
 @Controller('imports')
 export class ImportController {
-  constructor(private readonly imports: ImportService) {}
+  constructor(
+    private readonly imports: ImportService,
+    private readonly previews: PreviewService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Create an import session for a template' })
@@ -166,6 +183,46 @@ export class ImportController {
       importId,
       dto,
     );
+  }
+
+  @Post(':importId/preview')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'Dry-run normalize and validate mapped CSV rows. Does not confirm the import or persist records.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ImportPreviewResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({
+    status: 409,
+    description:
+      'IMPORT.PREVIEW_NOT_ALLOWED, IMPORT.MAPPING_INCOMPLETE, IMPORT.MAPPING_REVISION_CONFLICT, or IMPORT.FILE_CHANGED.',
+    content: {
+      'application/json': {
+        schema: {
+          oneOf: [
+            { $ref: getSchemaPath(ImportPreviewNotAllowedErrorDto) },
+            { $ref: getSchemaPath(ImportMappingIncompleteErrorDto) },
+            { $ref: getSchemaPath(ImportMappingRevisionConflictErrorDto) },
+            { $ref: getSchemaPath(ImportFileChangedErrorDto) },
+          ],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 413, type: ImportFileTooLargeErrorDto })
+  @ApiResponse({ status: 422, type: ImportInvalidCsvErrorDto })
+  @ApiResponse({ status: 503, type: ImportPreviewUnavailableErrorDto })
+  preview(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Body() dto: CreateImportPreviewDto,
+  ): Promise<ImportPreviewResponseDto> {
+    return this.previews.preview(organization.organizationId, importId, dto);
   }
 
   @Post(':importId/file')

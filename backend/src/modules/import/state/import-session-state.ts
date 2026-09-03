@@ -66,3 +66,16 @@ export function assertCanManageMapping(
     'Column mapping is only available after a CSV file has been uploaded.',
   );
 }
+
+export function assertCanPreview(
+  status: ImportSessionStatusValue,
+): void {
+  if (status === 'uploaded') {
+    return;
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.PREVIEW_NOT_ALLOWED',
+    'Preview is only available after a CSV file has been uploaded.',
+  );
+}
