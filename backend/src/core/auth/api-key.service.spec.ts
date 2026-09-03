@@ -46,6 +46,7 @@ describe('ApiKeyService', () => {
       organizationId,
       apiKeyId: 'key-1',
       apiKeyName: 'local',
+      credential: { type: 'apiKey' },
     });
     const call = prisma.apiKey.findUnique.mock.calls[0]?.[0] as {
       where: { keyHash: string };

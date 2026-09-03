@@ -27,6 +27,7 @@ export class ApiKeyService {
       organizationId: apiKey.organizationId,
       apiKeyId: apiKey.id,
       apiKeyName: apiKey.name,
+      credential: { type: 'apiKey' },
     };
   }
 }

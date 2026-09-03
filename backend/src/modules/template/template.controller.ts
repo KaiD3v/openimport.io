@@ -8,7 +8,6 @@ import {
   Post,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -19,8 +18,10 @@ import {
   TemplateNameConflictErrorDto,
   TemplateNotFoundErrorDto,
   UnauthorizedErrorDto,
+  ForbiddenErrorDto,
   ValidationFailedErrorDto,
 } from '../../common/dto/api-error-response.dto.js';
+import { ApiKeyOnlyAuth } from '../../core/auth/openapi-auth.decorators.js';
 import { CurrentOrganization } from '../../core/auth/current-organization.decorator.js';
 import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
 import { CreateTemplateDto } from './dto/create-template.dto.js';
@@ -42,7 +43,7 @@ const templateIdPipe = new ParseUUIDPipe({
 });
 
 @ApiTags('templates')
-@ApiBearerAuth('api-key')
+@ApiKeyOnlyAuth()
 @Controller('templates')
 export class TemplateController {
   constructor(private readonly templates: TemplateService) {}
@@ -52,6 +53,7 @@ export class TemplateController {
   @ApiResponse({ status: 201, type: TemplateResponseDto })
   @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 409, type: TemplateNameConflictErrorDto })
   create(
     @CurrentOrganization() organization: AuthenticatedOrganization,
@@ -70,6 +72,7 @@ export class TemplateController {
     description: 'templateId is not a UUID.',
   })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: TemplateNotFoundErrorDto })
   findById(
     @CurrentOrganization() organization: AuthenticatedOrganization,

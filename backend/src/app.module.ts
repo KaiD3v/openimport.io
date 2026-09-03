@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { resolveRequestId } from './common/http/request-id.js';
 import { ApiKeyGuard } from './core/auth/api-key.guard.js';
+import { ImportAuthorizationGuard } from './core/auth/import-authorization.guard.js';
 import { AuthModule } from './core/auth/auth.module.js';
 import { ConfigModule } from './core/config/config.module.js';
 import type { Env } from './core/config/env.js';
@@ -36,6 +37,8 @@ import { TemplateModule } from './modules/template/index.js';
               'res.headers["set-cookie"]',
               '*.password',
               '*.passwordHash',
+              '*.accessToken',
+              '*.tokenHash',
               '*.token',
               '*.apiKey',
               '*.secret',
@@ -49,6 +52,7 @@ import { TemplateModule } from './modules/template/index.js';
           customProps: (req: Request) => ({
             traceId: req.id,
             organizationId: req.organization?.organizationId,
+            credentialType: req.organization?.credential.type,
           }),
         },
       }),
@@ -62,6 +66,7 @@ import { TemplateModule } from './modules/template/index.js';
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: ApiKeyGuard },
+    { provide: APP_GUARD, useClass: ImportAuthorizationGuard },
   ],
 })
 export class AppModule {}

@@ -7,6 +7,8 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ApiKeyService } from './api-key.service.js';
 import type { AuthenticatedOrganization } from './authenticated-organization.js';
+import { isImportAccessToken } from './import-access-token.crypto.js';
+import { ImportAccessTokenService } from './import-access-token.service.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
 
 function readBearerToken(header: unknown): string | undefined {
@@ -22,6 +24,7 @@ export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly apiKeys: ApiKeyService,
+    private readonly importAccessTokens: ImportAccessTokenService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -41,8 +44,20 @@ export class ApiKeyGuard implements CanActivate {
     if (!token) {
       throw new UnauthorizedException({
         code: 'AUTH.MISSING_BEARER',
-        message: 'Authorization header must be a Bearer API key.',
+        message: 'Authorization header must contain a Bearer credential.',
       });
+    }
+
+    if (isImportAccessToken(token)) {
+      const organization = await this.importAccessTokens.resolve(token);
+      if (!organization) {
+        throw new UnauthorizedException({
+          code: 'AUTH.INVALID_IMPORT_TOKEN',
+          message: 'Import access token is invalid.',
+        });
+      }
+      request.organization = organization;
+      return true;
     }
 
     const organization = await this.apiKeys.resolve(token);

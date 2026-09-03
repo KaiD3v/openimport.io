@@ -42,7 +42,23 @@ export class UnauthorizedErrorDto {
   code!: string;
 
   @ApiProperty({
-    example: 'Authorization header must be a Bearer API key.',
+    example: 'Authorization header must contain a Bearer credential.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ForbiddenErrorDto {
+  @ApiProperty({ example: 'AUTH.INSUFFICIENT_SCOPE' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'This credential cannot access this resource.',
   })
   message!: string;
 

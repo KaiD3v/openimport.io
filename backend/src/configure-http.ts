@@ -36,7 +36,7 @@ export function configureHttpApp(app: INestApplication, env: Env): void {
       new DocumentBuilder()
         .setTitle('OpenImport API')
         .setDescription(
-          'Multi-tenant import template API. Authenticate with an organization API key.',
+          'Multi-tenant import template API. Authenticate with an organization API key. Selected import routes also accept a short-lived import access token.',
         )
         .setVersion('1.0.0')
         .addBearerAuth(
@@ -47,6 +47,16 @@ export function configureHttpApp(app: INestApplication, env: Env): void {
             description: 'Organization API key',
           },
           'api-key',
+        )
+        .addBearerAuth(
+          {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'Import access token',
+            description:
+              'Session-scoped import access token (oi_import_). Allowed only on annotated import routes for the bound importId.',
+          },
+          'import-access-token',
         )
         .build(),
     );
