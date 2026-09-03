@@ -2,15 +2,15 @@
 
 ## Isolamento e chaves
 
-O guard global autentica as rotas de negócio com `Authorization: Bearer <api-key>`, calcula SHA-256 e busca chave ativa. Health, Swagger/OpenAPI quando habilitados e o fallback 404 não exigem Bearer. A organização vem dessa chave e queries de recursos são escopadas por ela; recursos de outra organização retornam 404. O seed valida formato `oi_live_` + 64 hex minúsculos, guarda hash e prefixo diagnóstico, e se recusa em produção.
+O guard global autentica as rotas de negócio com `Authorization: Bearer <credencial>`. Prefixos distinguem API key (`oi_live_`) de token de importação (`oi_import_`). Em ambos os casos o backend calcula SHA-256 e busca o hash; o valor bruto não é persistido. Health, Swagger/OpenAPI quando habilitados e o fallback 404 não exigem Bearer. A organização vem da credencial e queries de recursos são escopadas por ela; recursos de outra organização retornam 404. Tokens de importação só acessam rotas anotadas da sessão vinculada; nas demais, `403 AUTH.INSUFFICIENT_SCOPE`. O seed valida formato `oi_live_` + 64 hex minúsculos, guarda hash e prefixo diagnóstico, e se recusa em produção.
 
-Há suporte a `revokedAt` na validação de chaves, mas não existe endpoint HTTP para criar, revogar ou listar chaves. Não existem RBAC, escopos, autenticação de usuário nem auditoria completa.
+Há suporte a `revokedAt` na validação de chaves e de tokens de importação. Uma API key revogada não autentica e também invalida imediatamente os tokens que ela emitiu. Não existe endpoint HTTP para criar, revogar ou listar chaves, nem para revogar tokens. Não existem RBAC geral, autenticação de usuário nem auditoria completa.
 
 CORS só controla origens autorizadas pelo navegador; não autentica clientes. Configure `ALLOWED_ORIGINS` como URLs explícitas; wildcard é rejeitado em produção.
 
 ## Logs e dados
 
-Logs Pino fazem redaction de authorization, cookie, idempotency key, secrets e chaves S3. `X-Request-ID` permite correlacionar resposta e `traceId`; envie-o em chamados de suporte, não uma API key ou conteúdo CSV.
+Logs Pino fazem redaction de authorization, cookie, idempotency key, secrets, `accessToken`, hashes de credencial e chaves S3. `X-Request-ID` permite correlacionar resposta e `traceId`; envie-o em chamados de suporte, não uma API key, token de importação ou conteúdo CSV.
 
 CSV pode conter dados pessoais. Use fixtures sintéticas, limite acesso a logs e storage e evite copiar linhas de clientes para tickets. Mensagens de erro de preview não ecoam valores de célula.
 
@@ -26,4 +26,4 @@ CSV é salvo fora do PostgreSQL em storage S3 compatível; banco guarda metadata
 
 ## Riscos para exposição pública
 
-Antes de publicar, faltam ao menos modelo de usuário/autorização, gestão segura de chaves, rate limiting, retenção/eliminação, monitoração de storage na readiness, estratégia de backup, proteção de dados e contrato de confirmação. Não há webhooks assinados implementados.
+Antes de publicar, faltam ao menos modelo de usuário, gestão segura de chaves, rate limiting, retenção/eliminação, monitoração de storage na readiness, estratégia de backup, proteção de dados e contrato de confirmação. O token de importação reduz o risco de expor a API key no navegador, mas não substitui hardening público completo. Não há webhooks assinados implementados.

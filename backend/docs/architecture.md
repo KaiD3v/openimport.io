@@ -1,11 +1,11 @@
 # Arquitetura atual
 
-O backend NestJS expõe uma API multi-tenant. A organização vem exclusivamente da API key verificada; o cliente não envia `organizationId` e o serviço nunca se conecta ao banco do sistema cliente.
+O backend NestJS expõe uma API multi-tenant. A organização vem da credencial autenticada: com API key, diretamente da chave verificada; com token de importação, da sessão vinculada, conferida com o token e a API key emissora. O cliente não envia `organizationId` e o serviço nunca se conecta ao banco do sistema cliente.
 
 ## Camadas e responsabilidades
 
 - `ConfigModule`: valida ambiente com Zod e fornece `ENV`.
-- `AuthModule`: `ApiKeyGuard` global, `ApiKeyService` e decorator `CurrentOrganization`. As rotas de negócio exigem Bearer; health e, quando habilitados, Swagger/OpenAPI são públicos.
+- `AuthModule`: `ApiKeyGuard` autentica Bearer (API key ou token de importação) e `ImportAuthorizationGuard` autoriza por tipo de credencial e `importId` persistido. A organização de um token vem da sessão e da API key emissora após checagem de consistência, não só da linha do token. `CurrentOrganization` continua expondo a organização; o contexto inclui `credential.type`. Health e, quando habilitados, Swagger/OpenAPI são públicos.
 - `TemplateModule`: controller, serviço e repository para templates e fields.
 - `ImportModule`: controller, serviço/repository de sessões, mapping, CSV e `PreviewService`.
 - `ObjectStorageModule`: porta `OBJECT_STORAGE`; `S3ObjectStorage` é o adaptador S3/MinIO.
@@ -34,6 +34,6 @@ Mapping é JSONB na sessão, associado por posição de coluna e `fieldKey`, com
 
 ## Onde ficam os dados
 
-PostgreSQL armazena organizações, hash/prefixo de API keys, templates/fields, sessão, metadados de upload, colunas, mapping e revisão. O objeto CSV permanece no storage. Respostas não expõem `organizationId`, chave de storage nem hash de credencial.
+PostgreSQL armazena organizações, hash/prefixo de API keys, hash/prefixo de tokens de importação, templates/fields, sessão, metadados de upload, colunas, mapping e revisão. O objeto CSV permanece no storage. Respostas não expõem `organizationId`, chave de storage nem hash de credencial.
 
 Para estados e constraints, consulte [Persistência e estados](data-model.md). Para regras do stream, consulte [CSV e normalização](csv-and-normalization.md).

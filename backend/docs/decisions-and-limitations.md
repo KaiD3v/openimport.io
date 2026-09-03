@@ -5,7 +5,8 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 | Decisão atual | Evidência e consequência |
 | --- | --- |
 | Integração por API | Templates, sessões, upload, mapping e preview são HTTP; não existe acesso ao banco do cliente. |
-| API keys no estágio atual | Organização é derivada do Bearer hash; não há login de usuário/browser. |
+| API keys no estágio atual | Organização é derivada do Bearer hash; login de usuário não existe. |
+| Token de importação | Credencial `oi_import_` opaca, hashed, TTL 60–3600s, ligada a uma sessão; deixa de autenticar se expirar, for revogada, não existir ou se a API key emissora estiver revogada. O frontend não recebe a API key. |
 | Storage separado do banco | CSV fica em S3/MinIO; PostgreSQL guarda metadata, colunas e mapping. |
 | Revisão otimista do mapping | `expectedRevision` protege substituição concorrente; no-op não incrementa. |
 | Preview síncrono e não persistido | Releitura completa acontece na requisição; não grava rows nem confirma importação. |
@@ -19,10 +20,9 @@ Não há listagem, histórico, confirmação, integração cliente, workers, fil
 
 ## Próximos passos possíveis, não comprometidos
 
-- Autenticação de usuário e credenciais restritas para browser.
+- Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e rate limiting.
 - Confirmação atômica que revalide revisão e identidade do arquivo.
 - Worker/fila, progresso e política de retries.
-- Gestão e rotação de API keys, RBAC, auditoria e rate limiting.
 - Retenção, exclusão, observabilidade e readiness abrangendo storage.
 - Listagem/histórico, XLSX e perfis de normalização adicionais.
 

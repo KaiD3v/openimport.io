@@ -1,6 +1,6 @@
 # Referência HTTP
 
-Base da API de negócio: `/api/v1`. Todas as rotas de negócio exigem `Authorization: Bearer <api-key>`. `GET /health`, `GET /health/ready`, `/docs` e `/docs-json` quando habilitados, e o fallback de rota inexistente são públicos. A organização é inferida; recurso de outra organização responde `404`, não `403`.
+Base da API de negócio: `/api/v1`. Rotas de negócio exigem `Authorization: Bearer <credencial>`. API keys (`oi_live_`) acessam todas as rotas da organização. Tokens de importação (`oi_import_`) só nas rotas anotadas da sessão vinculada. O OpenAPI declara `api-key` em `POST /imports`, emissão de tokens e templates; nas rotas anotadas declara alternativas `api-key` **ou** `import-access-token`. `GET /health`, `GET /health/ready`, `/docs` e `/docs-json` quando habilitados, e o fallback de rota inexistente são públicos. A organização é inferida; recurso de outra organização responde `404`, não `403`. Token em rota não permitida responde `403 AUTH.INSUFFICIENT_SCOPE`. Token em outro `importId` responde `404 IMPORT.NOT_FOUND`. Token expirado, revogado, desconhecido ou cuja API key emissora esteja revogada responde `401 AUTH.INVALID_IMPORT_TOKEN` sem distinguir o motivo. Bearer ausente responde `401 AUTH.MISSING_BEARER`.
 
 JSON é estrito: propriedades desconhecidas e tipos incompatíveis são rejeitados com `400 VALIDATION.FAILED`; não há conversão implícita de tipos nos DTOs de entrada. Respostas de erro seguem `{ code, message, details?, traceId }`; toda resposta traz `X-Request-ID`, igual a `traceId` em erros. Um `X-Request-ID` de entrada só é preservado se tiver 1–128 caracteres `[A-Za-z0-9._-]`.
 
@@ -25,17 +25,45 @@ Retorna `201` com `id`, `name`, `fields` (inclui `position` zero-based), `create
 {"name":"Produtos","fields":[{"key":"sku","label":"SKU","type":"string","required":true},{"key":"stock","label":"Estoque","type":"integer","required":false},{"key":"priceInCents","label":"Preço","type":"currency","required":true}]}
 ```
 
-`name` tem 1–100 caracteres após trim e é único por organização. Há 1–50 fields; `key` é única e segue `^[a-z][a-zA-Z0-9]{0,63}$`, `label` tem 1–120 e `type` é `string`, `integer` ou `currency`. `required` é booleano real. Erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `409 TEMPLATE.NAME_CONFLICT`.
+`name` tem 1–100 caracteres após trim e é único por organização. Há 1–50 fields; `key` é única e segue `^[a-z][a-zA-Z0-9]{0,63}$`, `label` tem 1–120 e `type` é `string`, `integer` ou `currency`. `required` é booleano real. Erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `409 TEMPLATE.NAME_CONFLICT`.
 
 ### `GET /templates/:templateId`
 
-UUID obrigatório; retorna o mesmo formato (`200`) ou `400 VALIDATION.FAILED`, `401 AUTH.*`, `404 TEMPLATE.NOT_FOUND`.
+UUID obrigatório; retorna o mesmo formato (`200`) ou `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 TEMPLATE.NOT_FOUND`.
+
+## Token de importação
+
+### `POST /imports/:importId/access-tokens`
+
+Somente API key (OpenAPI: `api-key`). Corpo opcional:
+
+```json
+{"expiresInSeconds":1800}
+```
+
+`expiresInSeconds` é inteiro JSON entre 60 e 3600; omitido, vale 1800. Retorna `201` e `Cache-Control: no-store`:
+
+```json
+{"accessToken":"oi_import_<64 hex>","tokenType":"Bearer","importId":"<uuid>","expiresAt":"<iso>"}
+```
+
+O segredo aparece só nessa resposta. Persistido: SHA-256, prefixo diagnóstico, organização, sessão, API key emissora, expiração e `revokedAt` opcional. Erros: `400 VALIDATION.FAILED`, `401`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 IMPORT.NOT_FOUND`.
+
+### `GET /imports/:importId/context`
+
+API key ou token da própria sessão (OpenAPI: alternativas `api-key` ou `import-access-token`). Retorna `200` com os contratos atuais de sessão, template e mapping:
+
+```json
+{"import":{},"template":{"id":"<uuid>","name":"products","fields":[]},"mapping":{}}
+```
+
+`import` segue `GET /imports/:importId`. `template` segue `GET /templates/:templateId` (incluindo `createdAt`/`updatedAt`). `mapping` segue `GET /imports/:importId/mapping`, inclusive em sessão `created` (draft vazio). Não expõe `organizationId`, hashes de credencial nem chave de storage. Erros: `400`, `401`, `403`, `404 IMPORT.NOT_FOUND`.
 
 ## Sessões e upload
 
 ### `POST /imports`
 
-Headers: Bearer, `Content-Type: application/json`, `Idempotency-Key`. Corpo: `{"templateId":"<uuid>"}`. A chave tem 8–128 caracteres `[A-Za-z0-9._-]`.
+Somente API key. Headers: Bearer, `Content-Type: application/json`, `Idempotency-Key`. Corpo: `{"templateId":"<uuid>"}`. A chave tem 8–128 caracteres `[A-Za-z0-9._-]`.
 
 Retorna `201` com:
 
@@ -43,17 +71,17 @@ Retorna `201` com:
 {"id":"<importId>","templateId":"<templateId>","status":"created","originalFilename":null,"byteSize":null,"contentSha256":null,"encoding":null,"delimiter":null,"dataRowCount":null,"columns":[],"uploadedAt":null,"createdAt":"<iso>","updatedAt":"<iso>"}
 ```
 
-Repetir mesma chave e mesmo template retorna a mesma sessão (`201`); mesma chave com template diferente retorna `409 IDEMPOTENCY.KEY_REUSED`. Outros erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `404 TEMPLATE.NOT_FOUND`.
+Repetir mesma chave e mesmo template retorna a mesma sessão (`201`); mesma chave com template diferente retorna `409 IDEMPOTENCY.KEY_REUSED`. Outros erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 TEMPLATE.NOT_FOUND`.
 
 ### `POST /imports/:importId/file`
 
-Bearer e `multipart/form-data`, com exatamente um arquivo no campo `file`, sem campos texto. Aceita extensão `.csv` ou MIME CSV, `application/octet-stream` ou `text/plain`. Retorna `201` na mesma forma de sessão, agora `uploaded` e com metadata/colunas.
+Bearer (API key ou token da sessão) e `multipart/form-data`, com exatamente um arquivo no campo `file`, sem campos texto. Aceita extensão `.csv` ou MIME CSV, `application/octet-stream` ou `text/plain`. Retorna `201` na mesma forma de sessão, agora `uploaded` e com metadata/colunas.
 
-Erros: `400 VALIDATION.FAILED` (multipart), `401`, `404 IMPORT.NOT_FOUND`, `409 IMPORT.FILE_ALREADY_UPLOADED` ou `IMPORT.UPLOAD_NOT_ALLOWED`, `413 IMPORT.FILE_TOO_LARGE`, `422 IMPORT.INVALID_CSV`. Ao exceder o limite de bytes, a sessão permanece `created`; uma falha de parsing depois que o objeto foi gravado tenta cleanup e muda a sessão para `upload_failed`. Upload não tem idempotência; não faça retry cego.
+Erros: `400 VALIDATION.FAILED` (multipart), `401`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 IMPORT.NOT_FOUND`, `409 IMPORT.FILE_ALREADY_UPLOADED` ou `IMPORT.UPLOAD_NOT_ALLOWED`, `413 IMPORT.FILE_TOO_LARGE`, `422 IMPORT.INVALID_CSV`. Ao exceder o limite de bytes, a sessão permanece `created`; uma falha de parsing depois que o objeto foi gravado tenta cleanup e muda a sessão para `upload_failed`. Upload não tem idempotência; não faça retry cego.
 
 ### `GET /imports/:importId`
 
-Retorna `200` com a sessão, incluindo campos nullable de metadata; antes do upload eles são `null` e `columns` é `[]`. Erros: `400`, `401`, `404 IMPORT.NOT_FOUND`.
+Retorna `200` com a sessão, incluindo campos nullable de metadata; antes do upload eles são `null` e `columns` é `[]`. Aceita API key ou token da sessão. Erros: `400`, `401`, `403`, `404 IMPORT.NOT_FOUND`.
 
 ## Mapping
 
@@ -117,6 +145,6 @@ Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de 
 
 ## Divergências conhecidas com OpenAPI
 
-- Runtime pode retornar `AUTH.INVALID_API_KEY`, mas o exemplo do DTO 401 apresenta apenas `AUTH.MISSING_BEARER`.
-- Preview envia `Cache-Control: no-store`, não descrito no OpenAPI.
+- Runtime pode retornar `AUTH.INVALID_API_KEY` ou `AUTH.INVALID_IMPORT_TOKEN`, mas o exemplo do DTO 401 apresenta `AUTH.MISSING_BEARER`.
+- Preview e emissão de token enviam `Cache-Control: no-store`; emissão está descrita no OpenAPI, preview ainda não descreve o header.
 - Erros de `Idempotency-Key` são `VALIDATION.FAILED` genéricos; não há DTO dedicado.

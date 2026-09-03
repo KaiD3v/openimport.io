@@ -6,15 +6,19 @@
 Organization 1--* ApiKey
 Organization 1--* ImportTemplate 1--* TemplateField
 Organization 1--* ImportSession *--1 ImportTemplate
+Organization 1--* ImportAccessToken
+ApiKey 1--* ImportAccessToken
 ImportSession 1--* ImportColumn
+ImportSession 1--* ImportAccessToken
 ```
 
-IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; as relações de organização, fields e columns usam cascade.
+IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAccessToken.issuerApiKeyId` usa `onDelete: Restrict`; as relações de organização, fields, columns e tokens para sessão usam cascade.
 
 | Entidade | Dados principais |
 | --- | --- |
 | `Organization` | nome e timestamps |
 | `ApiKey` | `keyHash` SHA-256 único, prefixo, `revokedAt` |
+| `ImportAccessToken` | `tokenHash` SHA-256 único, prefixo, sessão, emissor, `expiresAt`, `revokedAt` |
 | `ImportTemplate` / `TemplateField` | nome por organização, fields ordenados por `position` |
 | `ImportSession` | status, hashes de idempotência/fingerprint, metadata do arquivo, `mapping` JSONB e `mappingRevision` |
 | `ImportColumn` | nome e posição de header após upload |
@@ -22,12 +26,13 @@ IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; as relaç
 ## Unicidade e índices
 
 - API key: `keyHash` único; índice por organização.
+- Token de importação: `tokenHash` único; índices por sessão, organização e `expiresAt`.
 - Template: `(organizationId, name)` único.
 - Field: `(templateId, key)` e `(templateId, position)` únicos.
 - Sessão: `(organizationId, idempotencyKeyHash)` único; índices por organização, `(organizationId, templateId)` e `(organizationId, id)`.
 - Coluna: `(importSessionId, position)` e `(importSessionId, name)` únicos, além de índice por sessão.
 
-Há três migrations versionadas: `20260902204845_init`, `20260902215911_import_sessions` e `20260903060323_import_session_mapping`.
+Há quatro migrations versionadas: `20260902204845_init`, `20260902215911_import_sessions`, `20260903060323_import_session_mapping` e `20260903185231_import_access_tokens`.
 
 ## Status da sessão
 

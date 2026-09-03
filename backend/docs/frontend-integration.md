@@ -2,16 +2,24 @@
 
 ## Contratos existentes
 
-As rotas abaixo são relativas à base `/api/v1` e exigem `Authorization: Bearer <api-key>`.
+As rotas abaixo são relativas à base `/api/v1`.
 
-1. Crie ou recupere externamente um `templateId`. Só existem `POST /templates` e `GET /templates/:templateId`; não há listagem.
+O backend da organização autentica com `Authorization: Bearer <api-key>` (`oi_live_…`). Essa chave **não** deve ir para o navegador, bundles, `localStorage` ou query strings.
+
+Para o frontend, o backend da organização emite um token de importação (`oi_import_…`) com `POST /imports/:importId/access-tokens` e entrega o valor **uma vez** ao cliente. O frontend deve guardar o token **somente em memória** (estado da aba), nunca em cookie, `localStorage` ou URL.
+
+1. Crie ou recupere externamente um `templateId` (API key, no servidor). Só existem `POST /templates` e `GET /templates/:templateId`; não há listagem.
 2. Crie a sessão em `POST /imports`, com API key de organização e `Idempotency-Key` estável por tentativa lógica. Repetir mesma chave e payload retorna a mesma sessão; chave reutilizada com outro template retorna conflito.
-3. Envie um único `file` em `POST /imports/:importId/file`. Após sucesso, não reenvie. Em `upload_failed`, a sessão não é recuperável para upload: crie outra sessão.
-4. Consulte sessão e `GET /imports/:importId/mapping` para obter colunas e revisão.
-5. Salve todo o mapping com `PUT /imports/:importId/mapping` e `expectedRevision` atual. Associe posição de coluna a field, nunca texto do header.
-6. Quando `isComplete`, execute `POST /imports/:importId/preview` com `expectedMappingRevision` da resposta de mapping.
+3. Emita `POST /imports/:importId/access-tokens` com a API key. A resposta `201` traz `accessToken`, `tokenType: "Bearer"`, `importId` e `expiresAt`, com `Cache-Control: no-store`.
+4. Com o token, o navegador pode: `GET /imports/:importId`, `GET /imports/:importId/context`, `POST /imports/:importId/file`, `GET`/`PUT /imports/:importId/mapping` e `POST /imports/:importId/preview`.
+5. Envie um único `file` em `POST /imports/:importId/file`. Após sucesso, não reenvie. Em `upload_failed`, a sessão não é recuperável para upload: crie outra sessão (com a API key).
+6. Consulte sessão, `GET /imports/:importId/context` ou `GET /imports/:importId/mapping` para obter colunas, template e revisão.
+7. Salve todo o mapping com `PUT /imports/:importId/mapping` e `expectedRevision` atual. Associe posição de coluna a field, nunca texto do header.
+8. Quando `isComplete`, execute `POST /imports/:importId/preview` com `expectedMappingRevision` da resposta de mapping.
 
-Não há endpoints de listagem/histórico, progresso, cancelamento, confirmação nem aplicação definitiva. O fluxo atual termina em preview.
+O token vale só para o `importId` vinculado. Outra sessão da mesma organização responde `404 IMPORT.NOT_FOUND`. Criar sessão, emitir outro token ou acessar templates com o token responde `403 AUTH.INSUFFICIENT_SCOPE`. Token expirado, revogado, desconhecido ou cuja API key emissora esteja revogada responde `401 AUTH.INVALID_IMPORT_TOKEN` sem detalhar o motivo.
+
+Não há endpoints de listagem/histórico, progresso, cancelamento, confirmação nem aplicação definitiva. O fluxo atual termina em preview. Não há endpoint público de revogação; `revokedAt` é considerado na validação.
 
 ## Recomendações para a interface
 
@@ -21,17 +29,15 @@ Não há endpoints de listagem/histórico, progresso, cancelamento, confirmaçã
 - Trate `200` de preview como transporte bem-sucedido, não como todas as linhas válidas. Use `summary`, `rows[].valid` e `rows[].errors`; `data:null` é esperado na linha inválida.
 - Mostre aviso se `sampleTruncated` for `true`: a amostra é prefixo e pode estar vazia pelo orçamento, enquanto `summary` ainda cobre tudo.
 - Não cacheie preview (`Cache-Control: no-store`). Não indique processamento ou confirmação assíncrona: não existem.
-- Diferencie `400/401/404/409/413/422/503` de erro por linha. Exiba `code` e `traceId` para suporte, sem registrar CSV ou API key.
+- Diferencie `400/401/403/404/409/413/422/503` de erro por linha. Exiba `code` e `traceId` para suporte, sem registrar CSV, API key ou token de importação.
 
-## Autenticação no navegador: pendência
+## Autenticação no navegador
 
-O contrato atual requer API key de organização no Bearer. A autenticação de usuários em navegador não está implementada, e embutir uma API key organizacional no frontend não é solução aceitável.
-
-Alternativas futuras a decidir incluem um backend intermediário que mantenha a chave no servidor ou uma credencial restrita de curta duração. Nenhuma delas é capacidade existente.
+Não embuta a API key organizacional no frontend. O contrato suportado é o token `oi_import_` emitido pelo backend da organização, restrito a uma sessão, com TTL entre 60 e 3600 segundos (padrão 1800). Não há login de usuário, cookies, OAuth nem refresh token.
 
 ## Decisões ainda necessárias
 
-- Autenticação/autorização de usuário, escopos e emissão de credenciais para browser.
+- Autenticação de usuário final (login), RBAC geral e gestão HTTP de API keys.
 - Onde persistir IDs e idempotency keys do fluxo do cliente.
 - UI para retomada após falha de upload e para conflitos de mapping.
 - Confirmação do import e integração posterior com o sistema cliente.
