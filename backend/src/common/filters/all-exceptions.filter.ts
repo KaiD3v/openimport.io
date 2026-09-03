@@ -99,6 +99,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'RESOURCE.NOT_FOUND';
       case 409:
         return 'RESOURCE.CONFLICT';
+      case 413:
+        return 'IMPORT.FILE_TOO_LARGE';
+      case 422:
+        return 'IMPORT.INVALID_CSV';
       case 503:
         return 'SERVICE.UNAVAILABLE';
       default:

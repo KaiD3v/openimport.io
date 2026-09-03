@@ -12,6 +12,7 @@ import { env } from './core/config/env.singleton.js';
 import { ENV } from './core/config/env.token.js';
 import { DatabaseModule } from './core/database/database.module.js';
 import { HealthModule } from './core/health/health.module.js';
+import { ImportModule } from './modules/import/index.js';
 import { TemplateModule } from './modules/template/index.js';
 
 @Module({
@@ -31,6 +32,7 @@ import { TemplateModule } from './modules/template/index.js';
             paths: [
               'req.headers.authorization',
               'req.headers.cookie',
+              'req.headers["idempotency-key"]',
               'res.headers["set-cookie"]',
               '*.password',
               '*.passwordHash',
@@ -39,6 +41,8 @@ import { TemplateModule } from './modules/template/index.js';
               '*.secret',
               '*.keyHash',
               '*.SEED_API_KEY',
+              '*.S3_SECRET_ACCESS_KEY',
+              '*.S3_ACCESS_KEY_ID',
             ],
             censor: '[REDACTED]',
           },
@@ -53,6 +57,7 @@ import { TemplateModule } from './modules/template/index.js';
     AuthModule,
     HealthModule,
     TemplateModule,
+    ImportModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
