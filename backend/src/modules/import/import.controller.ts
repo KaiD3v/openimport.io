@@ -14,7 +14,6 @@ import {
   Req,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth,
   ApiBody,
   ApiConsumes,
   ApiExtraModels,
@@ -29,12 +28,18 @@ import type { Request } from 'express';
 import {
   InvalidUuidParamErrorDto,
   UnauthorizedErrorDto,
+  ForbiddenErrorDto,
   ValidationFailedErrorDto,
 } from '../../common/dto/api-error-response.dto.js';
+import { AllowImportAccessToken } from '../../core/auth/allow-import-access-token.decorator.js';
+import { ApiKeyOnlyAuth } from '../../core/auth/openapi-auth.decorators.js';
 import { CurrentOrganization } from '../../core/auth/current-organization.decorator.js';
 import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
 import { CreateImportSessionDto } from './dto/create-import-session.dto.js';
 import { CreateImportPreviewDto } from './dto/create-import-preview.dto.js';
+import { CreateImportAccessTokenDto } from './dto/create-import-access-token.dto.js';
+import { ImportAccessTokenResponseDto } from './dto/import-access-token-response.dto.js';
+import { ImportContextResponseDto } from './dto/import-context-response.dto.js';
 import { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import { ImportPreviewResponseDto } from './dto/import-preview-response.dto.js';
 import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
@@ -73,7 +78,6 @@ const importIdPipe = new ParseUUIDPipe({
 });
 
 @ApiTags('imports')
-@ApiBearerAuth('api-key')
 @ApiExtraModels(
   ImportFileAlreadyUploadedErrorDto,
   ImportUploadNotAllowedErrorDto,
@@ -92,6 +96,7 @@ export class ImportController {
   ) {}
 
   @Post()
+  @ApiKeyOnlyAuth()
   @ApiOperation({ summary: 'Create an import session for a template' })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -102,6 +107,7 @@ export class ImportController {
   @ApiResponse({ status: 201, type: ImportSessionResponseDto })
   @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: TemplateNotFoundErrorDto })
   @ApiResponse({ status: 409, type: IdempotencyKeyReusedErrorDto })
   create(
@@ -117,11 +123,13 @@ export class ImportController {
   }
 
   @Get(':importId')
+  @AllowImportAccessToken()
   @ApiOperation({ summary: 'Get an import session belonging to the organization' })
   @ApiParam({ name: 'importId', format: 'uuid' })
   @ApiResponse({ status: 200, type: ImportSessionResponseDto })
   @ApiResponse({ status: 400, type: InvalidUuidParamErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
   findById(
     @CurrentOrganization() organization: AuthenticatedOrganization,
@@ -130,7 +138,48 @@ export class ImportController {
     return this.imports.findById(organization.organizationId, importId);
   }
 
+  @Post(':importId/access-tokens')
+  @ApiKeyOnlyAuth()
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'Issue a short-lived import access token bound to this session. API key only; the secret is returned once.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 201, type: ImportAccessTokenResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  createAccessToken(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Body() dto: CreateImportAccessTokenDto,
+  ): Promise<ImportAccessTokenResponseDto> {
+    return this.imports.createAccessToken(organization, importId, dto);
+  }
+
+  @Get(':importId/context')
+  @AllowImportAccessToken()
+  @ApiOperation({
+    summary:
+      'Load session, template, and mapping together so a frontend can render the import flow.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ImportContextResponseDto })
+  @ApiResponse({ status: 400, type: InvalidUuidParamErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  getContext(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+  ): Promise<ImportContextResponseDto> {
+    return this.imports.getContext(organization.organizationId, importId);
+  }
+
   @Get(':importId/mapping')
+  @AllowImportAccessToken()
   @ApiOperation({
     summary: 'Get the column-to-field mapping draft for an uploaded import',
   })
@@ -138,6 +187,7 @@ export class ImportController {
   @ApiResponse({ status: 200, type: ImportMappingResponseDto })
   @ApiResponse({ status: 400, type: InvalidUuidParamErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
   @ApiResponse({ status: 409, type: ImportMappingNotAllowedErrorDto })
   getMapping(
@@ -148,6 +198,7 @@ export class ImportController {
   }
 
   @Put(':importId/mapping')
+  @AllowImportAccessToken()
   @ApiOperation({
     summary:
       'Replace the column-to-field mapping draft (optimistic concurrency via expectedRevision)',
@@ -156,6 +207,7 @@ export class ImportController {
   @ApiResponse({ status: 200, type: ImportMappingResponseDto })
   @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
   @ApiResponse({
     status: 409,
@@ -186,6 +238,7 @@ export class ImportController {
   }
 
   @Post(':importId/preview')
+  @AllowImportAccessToken()
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @ApiOperation({
@@ -196,6 +249,7 @@ export class ImportController {
   @ApiResponse({ status: 200, type: ImportPreviewResponseDto })
   @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
   @ApiResponse({
     status: 409,
@@ -226,6 +280,7 @@ export class ImportController {
   }
 
   @Post(':importId/file')
+  @AllowImportAccessToken()
   @ApiOperation({ summary: 'Upload a CSV file for an import session' })
   @ApiParam({ name: 'importId', format: 'uuid' })
   @ApiConsumes('multipart/form-data')
@@ -245,6 +300,7 @@ export class ImportController {
   @ApiResponse({ status: 201, type: ImportSessionResponseDto })
   @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
   @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
   @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
   @ApiResponse({
     status: 409,

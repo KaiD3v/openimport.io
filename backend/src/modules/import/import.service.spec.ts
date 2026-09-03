@@ -8,6 +8,7 @@ import type { ObjectStorage } from '../../integrations/object-storage/object-sto
 import { ImportRepository } from './import.repository.js';
 import { ImportService } from './import.service.js';
 import { TemplateRepository } from '../template/template.repository.js';
+import { ImportAccessTokenService } from '../../core/auth/import-access-token.service.js';
 import type { ImportSessionRecord } from './import.types.js';
 
 const organizationId = '11111111-1111-1111-1111-111111111111';
@@ -87,6 +88,7 @@ describe('ImportService.uploadFile stream cleanup', () => {
     service = new ImportService(
       imports as unknown as ImportRepository,
       {} as TemplateRepository,
+      {} as ImportAccessTokenService,
       storage as unknown as ObjectStorage,
       envFixture(),
     );

@@ -24,7 +24,15 @@ import {
   persistUploadWithCleanup,
 } from '../../integrations/object-storage/upload-cleanup.js';
 import { CsvParseError, parseCsvStream } from './csv/csv-parser.js';
+import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
+import { ImportAccessTokenService } from '../../core/auth/import-access-token.service.js';
+import {
+  CreateImportAccessTokenDto,
+  DEFAULT_IMPORT_ACCESS_TOKEN_TTL_SECONDS,
+} from './dto/create-import-access-token.dto.js';
 import type { CreateImportSessionDto } from './dto/create-import-session.dto.js';
+import type { ImportAccessTokenResponseDto } from './dto/import-access-token-response.dto.js';
+import type { ImportContextResponseDto } from './dto/import-context-response.dto.js';
 import type { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import type { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
 import type { PutImportMappingDto } from './dto/put-import-mapping.dto.js';
@@ -85,6 +93,7 @@ export class ImportService {
   constructor(
     private readonly imports: ImportRepository,
     private readonly templates: TemplateRepository,
+    private readonly importAccessTokens: ImportAccessTokenService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(ENV) private readonly env: Env,
   ) {}
@@ -168,6 +177,60 @@ export class ImportService {
       });
     }
     return this.toResponse(session);
+  }
+
+  async createAccessToken(
+    organization: AuthenticatedOrganization,
+    importId: string,
+    dto: CreateImportAccessTokenDto,
+  ): Promise<ImportAccessTokenResponseDto> {
+    const issued = await this.importAccessTokens.issue({
+      organizationId: organization.organizationId,
+      importSessionId: importId,
+      issuerApiKeyId: organization.apiKeyId,
+      expiresInSeconds:
+        dto.expiresInSeconds ?? DEFAULT_IMPORT_ACCESS_TOKEN_TTL_SECONDS,
+    });
+    if (!issued) {
+      throw new NotFoundException({
+        code: 'IMPORT.NOT_FOUND',
+        message: 'Import session not found.',
+      });
+    }
+    return {
+      accessToken: issued.accessToken,
+      tokenType: 'Bearer',
+      importId: issued.importId,
+      expiresAt: issued.expiresAt.toISOString(),
+    };
+  }
+
+  async getContext(
+    organizationId: string,
+    importId: string,
+  ): Promise<ImportContextResponseDto> {
+    const session = await this.requireSession(organizationId, importId);
+    const template = await this.requireTemplate(
+      organizationId,
+      session.templateId,
+    );
+    return {
+      import: this.toResponse(session),
+      template: {
+        id: template.id,
+        name: template.name,
+        fields: template.fields.map((field) => ({
+          key: field.key,
+          label: field.label,
+          type: field.type,
+          required: field.required,
+          position: field.position,
+        })),
+        createdAt: template.createdAt.toISOString(),
+        updatedAt: template.updatedAt.toISOString(),
+      },
+      mapping: this.toMappingResponse(session, template),
+    };
   }
 
   async getMapping(
