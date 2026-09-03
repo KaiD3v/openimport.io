@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ImportSessionTransitionError,
+  assertCanManageMapping,
   assertCanUpload,
   nextStatusAfterUploadFailure,
   nextStatusAfterUploadSuccess,
@@ -47,5 +48,23 @@ describe('import session state machine', () => {
     expect(() => nextStatusAfterUploadSuccess('uploaded')).toThrow(
       ImportSessionTransitionError,
     );
+  });
+
+  it('allows mapping only when status is uploaded', () => {
+    expect(() => assertCanManageMapping('uploaded')).not.toThrow();
+  });
+
+  it('rejects mapping from created and upload_failed', () => {
+    for (const status of ['created', 'upload_failed'] as const) {
+      try {
+        assertCanManageMapping(status);
+        throw new Error('expected transition error');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ImportSessionTransitionError);
+        expect((error as ImportSessionTransitionError).code).toBe(
+          'IMPORT.MAPPING_NOT_ALLOWED',
+        );
+      }
+    }
   });
 });

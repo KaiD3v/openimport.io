@@ -53,3 +53,16 @@ export function nextStatusAfterUploadFailure(
   }
   return 'upload_failed';
 }
+
+export function assertCanManageMapping(
+  status: ImportSessionStatusValue,
+): void {
+  if (status === 'uploaded') {
+    return;
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.MAPPING_NOT_ALLOWED',
+    'Column mapping is only available after a CSV file has been uploaded.',
+  );
+}
