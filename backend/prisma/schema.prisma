@@ -97,6 +97,8 @@ model ImportSession {
   delimiter           String?             @db.VarChar(8)
   dataRowCount        Int?                @map("data_row_count")
   storageObjectKey    String?             @map("storage_object_key") @db.VarChar(512)
+  mapping             Json                @default("[]") @db.JsonB
+  mappingRevision     Int                 @default(0) @map("mapping_revision")
   uploadedAt          DateTime?           @map("uploaded_at") @db.Timestamptz(6)
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
