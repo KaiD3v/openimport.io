@@ -158,3 +158,68 @@ export class ImportMappingInvalidErrorDto {
   @ApiProperty({ example: TRACE_ID_EXAMPLE })
   traceId!: string;
 }
+
+export class ImportPreviewNotAllowedErrorDto {
+  @ApiProperty({ example: 'IMPORT.PREVIEW_NOT_ALLOWED' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'Preview is only available after a CSV file has been uploaded.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportMappingIncompleteErrorDto {
+  @ApiProperty({ example: 'IMPORT.MAPPING_INCOMPLETE' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'Preview requires every required template field to be mapped.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportFileChangedErrorDto {
+  @ApiProperty({ example: 'IMPORT.FILE_CHANGED' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'Stored file no longer matches the upload metadata.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportPreviewUnavailableErrorDto {
+  @ApiProperty({ example: 'IMPORT.PREVIEW_UNAVAILABLE' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'The import file could not be read for preview.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
