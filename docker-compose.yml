@@ -17,5 +17,38 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: openimport
+      MINIO_ROOT_PASSWORD: openimportsecret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - openimport_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 openimport openimportsecret; do sleep 1; done
+        mc mb --ignore-existing local/openimport
+        exit 0
+
 volumes:
   openimport_postgres:
+  openimport_minio:
