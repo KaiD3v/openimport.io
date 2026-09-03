@@ -108,3 +108,53 @@ export class ImportInvalidCsvErrorDto {
   @ApiProperty({ example: TRACE_ID_EXAMPLE })
   traceId!: string;
 }
+
+export class ImportMappingNotAllowedErrorDto {
+  @ApiProperty({ example: 'IMPORT.MAPPING_NOT_ALLOWED' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'Column mapping is only available after a CSV file has been uploaded.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportMappingRevisionConflictErrorDto {
+  @ApiProperty({ example: 'IMPORT.MAPPING_REVISION_CONFLICT' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'Mapping revision is out of date. GET the mapping and retry with the current revision.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportMappingInvalidErrorDto {
+  @ApiProperty({ example: 'IMPORT.MAPPING_INVALID' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'Field key "unknown" is not part of this session template.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
