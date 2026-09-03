@@ -74,7 +74,25 @@ describe('OpenImport API (e2e)', () => {
       type: 'http',
       scheme: 'bearer',
     });
+    expect(
+      response.body.components.securitySchemes['import-access-token'],
+    ).toMatchObject({
+      type: 'http',
+      scheme: 'bearer',
+    });
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/access-tokens'],
+    ).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/context'],
+    ).toBeDefined();
     expect(response.body.paths['/api/v1/templates']).toBeDefined();
+    expect(response.body.paths['/api/v1/templates'].post.security).toEqual([
+      { 'api-key': [] },
+    ]);
+    expect(
+      response.body.paths['/api/v1/templates/{templateId}'].get.security,
+    ).toEqual([{ 'api-key': [] }]);
   });
 
   it('creates a template with an authenticated POST', async () => {
@@ -139,6 +157,9 @@ describe('OpenImport API (e2e)', () => {
       .expect(401);
 
     expect(response.body.code).toBe('AUTH.MISSING_BEARER');
+    expect(response.body.message).toBe(
+      'Authorization header must contain a Bearer credential.',
+    );
   });
 
   it('returns 401 when the API key is invalid', async () => {
@@ -380,6 +401,9 @@ describe('OpenImport API (e2e)', () => {
     );
     expect(schemas.UnauthorizedErrorDto.properties.code.example).toBe(
       'AUTH.MISSING_BEARER',
+    );
+    expect(schemas.UnauthorizedErrorDto.properties.message.example).toBe(
+      'Authorization header must contain a Bearer credential.',
     );
     expect(schemas.TemplateNotFoundErrorDto.properties.code.example).toBe(
       'TEMPLATE.NOT_FOUND',

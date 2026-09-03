@@ -872,6 +872,12 @@ describe('Import sessions (e2e)', () => {
     expect(response.body.paths['/api/v1/imports/{importId}/file']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/mapping']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/preview']).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/access-tokens'],
+    ).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/context'],
+    ).toBeDefined();
     const spec = JSON.stringify(response.body);
     expect(spec).toContain('IMPORT.FILE_ALREADY_UPLOADED');
     expect(spec).toContain('IMPORT.UPLOAD_NOT_ALLOWED');
@@ -889,6 +895,44 @@ describe('Import sessions (e2e)', () => {
         (parameter: { name?: string }) => parameter.name === 'Idempotency-Key',
       ),
     ).toBe(true);
+
+    const securityOf = (path: string, method: string) =>
+      response.body.paths[path][method].security as
+        | Array<Record<string, string[]>>
+        | undefined;
+
+    const expectApiKeyOnly = (
+      path: string,
+      method: string,
+    ) => {
+      expect(securityOf(path, method)).toEqual([{ 'api-key': [] }]);
+    };
+
+    const expectApiKeyOrImportToken = (
+      path: string,
+      method: string,
+    ) => {
+      const security = securityOf(path, method);
+      expect(security).toHaveLength(2);
+      expect(security).toEqual(
+        expect.arrayContaining([
+          { 'api-key': [] },
+          { 'import-access-token': [] },
+        ]),
+      );
+      for (const requirement of security ?? []) {
+        expect(Object.keys(requirement)).toHaveLength(1);
+      }
+    };
+
+    expectApiKeyOnly('/api/v1/imports', 'post');
+    expectApiKeyOnly('/api/v1/imports/{importId}/access-tokens', 'post');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}', 'get');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/context', 'get');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/file', 'post');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/mapping', 'get');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/mapping', 'put');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/preview', 'post');
   });
 
   async function createUploadedSession(
@@ -2001,4 +2045,370 @@ describe('Import sessions (e2e)', () => {
     expect(restoredPreview.body.code).toBeUndefined();
     expect(await countObjects(`org/${tenant.organizationId}/`)).toBe(1);
   }, 20_000);
+
+  describe('import access tokens', () => {
+    async function createSkuTemplate(apiKey: string): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/templates')
+        .set('Authorization', `Bearer ${apiKey}`)
+        .send({
+          name: `sku-token-${Date.now()}`,
+          fields: [
+            { key: 'sku', label: 'SKU', type: 'string', required: true },
+          ],
+        })
+        .expect(201);
+      return response.body.id as string;
+    }
+
+    async function createSession(
+      apiKey: string,
+      templateId: string,
+      idempotencyKey: string,
+    ): Promise<string> {
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/imports')
+        .set('Authorization', `Bearer ${apiKey}`)
+        .set('Idempotency-Key', idempotencyKey)
+        .send({ templateId })
+        .expect(201);
+      return created.body.id as string;
+    }
+
+    function assertNoSecrets(body: unknown): void {
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toContain('tokenHash');
+      expect(serialized).not.toContain('keyHash');
+      expect(serialized).not.toContain('storageObjectKey');
+      expect(serialized).not.toContain('organizationId');
+      expect(serialized).not.toContain('issuerApiKeyId');
+    }
+
+    it('issues a token with API key and drives the bound import flow', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const importId = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-issue-flow-001',
+      );
+
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('X-Request-ID', 'req_issue_import_token')
+        .send({ expiresInSeconds: 1800 })
+        .expect(201);
+
+      expect(issued.headers['cache-control']).toMatch(/no-store/);
+      expect(issued.headers['x-request-id']).toBe('req_issue_import_token');
+      expect(issued.body.tokenType).toBe('Bearer');
+      expect(issued.body.importId).toBe(importId);
+      expect(issued.body.accessToken).toMatch(/^oi_import_[0-9a-f]{64}$/);
+      expect(issued.body.expiresAt).toEqual(expect.any(String));
+      assertNoSecrets(issued.body);
+      expect(JSON.stringify(issued.body)).not.toContain(
+        createHash('sha256')
+          .update(issued.body.accessToken, 'utf8')
+          .digest('hex'),
+      );
+
+      const stored = await prisma.importAccessToken.findMany({
+        where: { importSessionId: importId },
+      });
+      expect(stored).toHaveLength(1);
+      expect(stored[0]?.tokenHash).toBe(
+        createHash('sha256')
+          .update(issued.body.accessToken, 'utf8')
+          .digest('hex'),
+      );
+      expect(stored[0]?.tokenHash).not.toBe(issued.body.accessToken);
+
+      const token = issued.body.accessToken as string;
+      const auth = { Authorization: `Bearer ${token}` };
+
+      const session = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set(auth)
+        .expect(200);
+      expect(session.body.id).toBe(importId);
+      assertNoSecrets(session.body);
+
+      const uploaded = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/file`)
+        .set(auth)
+        .attach('file', Buffer.from('sku\nA1\n', 'utf8'), {
+          filename: 'sku.csv',
+          contentType: 'text/csv',
+        })
+        .expect(201);
+      expect(uploaded.body.dataRowCount).toBe(1);
+      assertNoSecrets(uploaded.body);
+
+      const mapping = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}/mapping`)
+        .set(auth)
+        .expect(200);
+      expect(mapping.body.importId).toBe(importId);
+
+      const saved = await request(app.getHttpServer())
+        .put(`/api/v1/imports/${importId}/mapping`)
+        .set(auth)
+        .send({
+          expectedRevision: mapping.body.revision,
+          mappings: [{ columnPosition: 0, fieldKey: 'sku' }],
+        })
+        .expect(200);
+      expect(saved.body.isComplete).toBe(true);
+
+      const preview = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/preview`)
+        .set(auth)
+        .send({ expectedMappingRevision: saved.body.revision })
+        .expect(200);
+      expect(preview.body.rows[0].data.sku).toBe('A1');
+      assertNoSecrets(preview.body);
+
+      const context = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}/context`)
+        .set(auth)
+        .expect(200);
+      expect(context.body.import.id).toBe(importId);
+      expect(context.body.template.id).toBe(templateId);
+      expect(context.body.template.fields[0].key).toBe('sku');
+      expect(context.body.mapping.isComplete).toBe(true);
+      assertNoSecrets(context.body);
+
+      const viaApiKey = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .expect(200);
+      expect(viaApiKey.body.id).toBe(importId);
+    });
+
+    it('does not allow a token to reach another import of the same organization', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const first = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-same-org-a',
+      );
+      const second = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-same-org-b',
+      );
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${first}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({})
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${second}`)
+        .set('Authorization', `Bearer ${issued.body.accessToken}`)
+        .expect(404);
+      expect(response.body.code).toBe('IMPORT.NOT_FOUND');
+      expect(response.headers['x-request-id']).toEqual(expect.any(String));
+      expect(response.body.traceId).toBe(response.headers['x-request-id']);
+    });
+
+    it('does not reveal another organization import through a token', async () => {
+      const tenantA = await trackTenant();
+      const tenantB = await trackTenant();
+      const templateA = await createSkuTemplate(tenantA.apiKey);
+      const templateB = await createSkuTemplate(tenantB.apiKey);
+      const importA = await createSession(
+        tenantA.apiKey,
+        templateA,
+        'token-tenant-a',
+      );
+      const importB = await createSession(
+        tenantB.apiKey,
+        templateB,
+        'token-tenant-b',
+      );
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importA}/access-tokens`)
+        .set('Authorization', `Bearer ${tenantA.apiKey}`)
+        .send({})
+        .expect(201);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importB}`)
+        .set('Authorization', `Bearer ${issued.body.accessToken}`)
+        .expect(404);
+      expect(response.body.code).toBe('IMPORT.NOT_FOUND');
+    });
+
+    it('rejects expired, revoked, and random import tokens without distinguishing them', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const importId = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-invalid-states',
+      );
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({ expiresInSeconds: 60 })
+        .expect(201);
+      const token = issued.body.accessToken as string;
+
+      await prisma.importAccessToken.updateMany({
+        where: { importSessionId: importId },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+      const expired = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+      expect(expired.body.code).toBe('AUTH.INVALID_IMPORT_TOKEN');
+
+      await prisma.importAccessToken.updateMany({
+        where: { importSessionId: importId },
+        data: {
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: new Date(),
+        },
+      });
+      const revoked = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+      expect(revoked.body.code).toBe('AUTH.INVALID_IMPORT_TOKEN');
+
+      const random = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set(
+          'Authorization',
+          `Bearer oi_import_${'ab'.repeat(32)}`,
+        )
+        .expect(401);
+      expect(random.body.code).toBe('AUTH.INVALID_IMPORT_TOKEN');
+    });
+
+    it('invalidates derived tokens when the issuer API key is revoked', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const importId = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-issuer-revoked',
+      );
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({})
+        .expect(201);
+      const token = issued.body.accessToken as string;
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      await prisma.importAccessToken.updateMany({
+        where: { importSessionId: importId },
+        data: { revokedAt: new Date() },
+      });
+      const directlyRevoked = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+      expect(directlyRevoked.body.code).toBe('AUTH.INVALID_IMPORT_TOKEN');
+
+      await prisma.importAccessToken.updateMany({
+        where: { importSessionId: importId },
+        data: { revokedAt: null },
+      });
+      await prisma.apiKey.updateMany({
+        where: { organizationId: tenant.organizationId },
+        data: { revokedAt: new Date() },
+      });
+
+      const afterIssuerRevoked = await request(app.getHttpServer())
+        .get(`/api/v1/imports/${importId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+      expect(afterIssuerRevoked.body).toMatchObject({
+        code: directlyRevoked.body.code,
+        message: directlyRevoked.body.message,
+      });
+    });
+
+    it('forbids session creation, token issuance, and template access with an import token', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const importId = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-forbidden-ops',
+      );
+      const issued = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({})
+        .expect(201);
+      const auth = { Authorization: `Bearer ${issued.body.accessToken}` };
+
+      const create = await request(app.getHttpServer())
+        .post('/api/v1/imports')
+        .set(auth)
+        .set('Idempotency-Key', 'token-must-not-create')
+        .send({ templateId })
+        .expect(403);
+      expect(create.body.code).toBe('AUTH.INSUFFICIENT_SCOPE');
+
+      const emit = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set(auth)
+        .send({})
+        .expect(403);
+      expect(emit.body.code).toBe('AUTH.INSUFFICIENT_SCOPE');
+
+      const template = await request(app.getHttpServer())
+        .get(`/api/v1/templates/${templateId}`)
+        .set(auth)
+        .expect(403);
+      expect(template.body.code).toBe('AUTH.INSUFFICIENT_SCOPE');
+    });
+
+    it('returns 404 when issuing a token for another organization session', async () => {
+      const tenantA = await trackTenant();
+      const tenantB = await trackTenant();
+      const templateB = await createSkuTemplate(tenantB.apiKey);
+      const importB = await createSession(
+        tenantB.apiKey,
+        templateB,
+        'token-issue-cross-tenant',
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importB}/access-tokens`)
+        .set('Authorization', `Bearer ${tenantA.apiKey}`)
+        .send({})
+        .expect(404);
+      expect(response.body.code).toBe('IMPORT.NOT_FOUND');
+    });
+
+    it('rejects an out-of-range TTL as VALIDATION.FAILED', async () => {
+      const tenant = await trackTenant();
+      const templateId = await createSkuTemplate(tenant.apiKey);
+      const importId = await createSession(
+        tenant.apiKey,
+        templateId,
+        'token-ttl-invalid',
+      );
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${importId}/access-tokens`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .send({ expiresInSeconds: 59 })
+        .expect(400);
+      expect(response.body.code).toBe('VALIDATION.FAILED');
+    });
+  });
 });
