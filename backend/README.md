@@ -79,6 +79,7 @@ The API listens on `PORT` (default 3000).
 - Get import session: `GET /api/v1/imports/:importId`
 - Get column mapping: `GET /api/v1/imports/:importId/mapping`
 - Replace column mapping: `PUT /api/v1/imports/:importId/mapping`
+- Preview mapped rows (dry run): `POST /api/v1/imports/:importId/preview`
 
 ## Import session flow
 
@@ -169,6 +170,26 @@ curl -sS -X PUT http://localhost:3000/api/v1/imports/$IMPORT_ID/mapping \
   -H "Content-Type: application/json" \
   -d "{\"expectedRevision\":1,\"mappings\":[{\"columnPosition\":0,\"fieldKey\":\"sku\"},{\"columnPosition\":2,\"fieldKey\":\"priceInCents\"}]}"
 ```
+
+7. Dry-run preview (does **not** confirm the import, persist normalized rows, or call any customer API):
+
+```bash
+curl -sS -X POST http://localhost:3000/api/v1/imports/$IMPORT_ID/preview \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"expectedMappingRevision":2,"limit":20}'
+```
+
+Preview applies the saved mapping, profile `pt-BR-v1`, and returns:
+- `summary` counts for **every** data record.
+- `rows`: a prefix sample (`limit` 1–100, default 20), also capped at 1 MiB of JSON (`1_048_576` bytes of `JSON.stringify` UTF-8). `sampleTruncated` is true when the sample is incomplete. A first record larger than that budget can yield `rows: []` while the summary remains valid. `expectedMappingRevision` must be a JSON integer from `0` to `Number.MAX_SAFE_INTEGER`.
+- Invalid records have `data: null` and per-field errors (`FIELD.REQUIRED`, `FIELD.INVALID_INTEGER`, `FIELD.INVALID_CURRENCY`, `FIELD.NUMBER_OUT_OF_RANGE`). Messages never echo cell values.
+
+HTTP 200 with invalid rows is expected. Preview does not change session status, mapping, revision, or the stored object.
+
+Conflicts: `409 IMPORT.PREVIEW_NOT_ALLOWED` (not `uploaded`), `409 IMPORT.MAPPING_INCOMPLETE`, `409 IMPORT.MAPPING_REVISION_CONFLICT` (before or during the read), `409 IMPORT.FILE_CHANGED` (object bytes or header/count no longer match upload metadata). Values of `expectedMappingRevision` outside `0..Number.MAX_SAFE_INTEGER` return `400 VALIDATION.FAILED` before storage is opened. Read failures, including a storage stream that closes before EOF, return `503 IMPORT.PREVIEW_UNAVAILABLE` and never delete the object.
+
+A later confirmation step (not in this slice) must re-check mapping revision and file identity.
 
 ## Template contract
 
