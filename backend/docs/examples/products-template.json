@@ -1,0 +1,23 @@
+{
+  "name": "Produtos de demonstração",
+  "fields": [
+    {
+      "key": "sku",
+      "label": "SKU",
+      "type": "string",
+      "required": true
+    },
+    {
+      "key": "stock",
+      "label": "Estoque",
+      "type": "integer",
+      "required": false
+    },
+    {
+      "key": "priceInCents",
+      "label": "Preço",
+      "type": "currency",
+      "required": true
+    }
+  ]
+}
