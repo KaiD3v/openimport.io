@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Req,
 } from '@nestjs/common';
 import {
@@ -30,16 +31,21 @@ import {
 import { CurrentOrganization } from '../../core/auth/current-organization.decorator.js';
 import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
 import { CreateImportSessionDto } from './dto/create-import-session.dto.js';
+import { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
 import {
   IdempotencyKeyReusedErrorDto,
   ImportFileAlreadyUploadedErrorDto,
   ImportFileTooLargeErrorDto,
   ImportInvalidCsvErrorDto,
+  ImportMappingInvalidErrorDto,
+  ImportMappingNotAllowedErrorDto,
+  ImportMappingRevisionConflictErrorDto,
   ImportNotFoundErrorDto,
   ImportUploadNotAllowedErrorDto,
   TemplateNotFoundErrorDto,
 } from './dto/import-error-response.dto.js';
+import { PutImportMappingDto } from './dto/put-import-mapping.dto.js';
 import { ImportService } from './import.service.js';
 
 const importIdPipe = new ParseUUIDPipe({
@@ -61,6 +67,8 @@ const importIdPipe = new ParseUUIDPipe({
 @ApiExtraModels(
   ImportFileAlreadyUploadedErrorDto,
   ImportUploadNotAllowedErrorDto,
+  ImportMappingNotAllowedErrorDto,
+  ImportMappingRevisionConflictErrorDto,
 )
 @Controller('imports')
 export class ImportController {
@@ -103,6 +111,61 @@ export class ImportController {
     @Param('importId', importIdPipe) importId: string,
   ): Promise<ImportSessionResponseDto> {
     return this.imports.findById(organization.organizationId, importId);
+  }
+
+  @Get(':importId/mapping')
+  @ApiOperation({
+    summary: 'Get the column-to-field mapping draft for an uploaded import',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ImportMappingResponseDto })
+  @ApiResponse({ status: 400, type: InvalidUuidParamErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({ status: 409, type: ImportMappingNotAllowedErrorDto })
+  getMapping(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+  ): Promise<ImportMappingResponseDto> {
+    return this.imports.getMapping(organization.organizationId, importId);
+  }
+
+  @Put(':importId/mapping')
+  @ApiOperation({
+    summary:
+      'Replace the column-to-field mapping draft (optimistic concurrency via expectedRevision)',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ImportMappingResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({
+    status: 409,
+    description:
+      'IMPORT.MAPPING_NOT_ALLOWED when the session is not uploaded, or IMPORT.MAPPING_REVISION_CONFLICT when expectedRevision is stale.',
+    content: {
+      'application/json': {
+        schema: {
+          oneOf: [
+            { $ref: getSchemaPath(ImportMappingNotAllowedErrorDto) },
+            { $ref: getSchemaPath(ImportMappingRevisionConflictErrorDto) },
+          ],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 422, type: ImportMappingInvalidErrorDto })
+  putMapping(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Body() dto: PutImportMappingDto,
+  ): Promise<ImportMappingResponseDto> {
+    return this.imports.putMapping(
+      organization.organizationId,
+      importId,
+      dto,
+    );
   }
 
   @Post(':importId/file')

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
 import type {
   CreateImportSessionData,
+  ImportMappingPairRecord,
   ImportSessionRecord,
   MarkUploadedData,
 } from './import.types.js';
@@ -118,6 +120,41 @@ export class ImportRepository {
       data: {
         status: 'upload_failed',
       },
+    });
+  }
+
+  async replaceMapping(
+    organizationId: string,
+    importId: string,
+    expectedRevision: number,
+    mappings: ImportMappingPairRecord[],
+  ): Promise<ImportSessionRecord | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.importSession.updateMany({
+        where: {
+          id: importId,
+          organizationId,
+          status: 'uploaded',
+          mappingRevision: expectedRevision,
+        },
+        data: {
+          mapping: mappings as Prisma.InputJsonValue,
+          mappingRevision: expectedRevision + 1,
+        },
+      });
+
+      if (updated.count !== 1) {
+        return null;
+      }
+
+      const session = await tx.importSession.findFirst({
+        where: { id: importId, organizationId },
+        include: sessionInclude,
+      });
+      if (!session) {
+        throw new Error('IMPORT_NOT_FOUND_AFTER_MAPPING');
+      }
+      return session;
     });
   }
 }

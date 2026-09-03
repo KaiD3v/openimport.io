@@ -51,6 +51,8 @@ function createdSession(): ImportSessionRecord {
     delimiter: null,
     dataRowCount: null,
     storageObjectKey: null,
+    mapping: [],
+    mappingRevision: 0,
     uploadedAt: null,
     createdAt: now,
     updatedAt: now,

@@ -12,6 +12,7 @@ import {
 import type { Request } from 'express';
 import type { Readable } from 'node:stream';
 import { TemplateRepository } from '../template/template.repository.js';
+import type { ImportTemplateRecord } from '../template/template.types.js';
 import { ENV } from '../../core/config/env.token.js';
 import type { Env } from '../../core/config/env.js';
 import {
@@ -24,7 +25,9 @@ import {
 } from '../../integrations/object-storage/upload-cleanup.js';
 import { CsvParseError, parseCsvStream } from './csv/csv-parser.js';
 import type { CreateImportSessionDto } from './dto/create-import-session.dto.js';
+import type { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import type { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
+import type { PutImportMappingDto } from './dto/put-import-mapping.dto.js';
 import {
   FileTooLargeError,
   HashAndLimitTransform,
@@ -38,10 +41,18 @@ import {
 import { ImportRepository } from './import.repository.js';
 import type { ImportSessionRecord } from './import.types.js';
 import {
+  MappingValidationError,
+  areMappingsSemanticallyEqual,
+  buildMappingView,
+  canonicalizeMapping,
+  parseStoredMapping,
+} from './mapping/column-mapping.js';
+import {
   MultipartFileError,
   readMultipartFile,
 } from './multipart-file.js';
 import {
+  assertCanManageMapping,
   assertCanUpload,
   ImportSessionTransitionError,
   nextStatusAfterUploadFailure,
@@ -157,6 +168,75 @@ export class ImportService {
       });
     }
     return this.toResponse(session);
+  }
+
+  async getMapping(
+    organizationId: string,
+    importId: string,
+  ): Promise<ImportMappingResponseDto> {
+    const session = await this.requireSession(organizationId, importId);
+    this.assertMappingAllowed(session.status);
+    const template = await this.requireTemplate(
+      organizationId,
+      session.templateId,
+    );
+    return this.toMappingResponse(session, template);
+  }
+
+  async putMapping(
+    organizationId: string,
+    importId: string,
+    dto: PutImportMappingDto,
+  ): Promise<ImportMappingResponseDto> {
+    const session = await this.requireSession(organizationId, importId);
+    this.assertMappingAllowed(session.status);
+
+    if (session.mappingRevision !== dto.expectedRevision) {
+      throw new ConflictException({
+        code: 'IMPORT.MAPPING_REVISION_CONFLICT',
+        message:
+          'Mapping revision is out of date. GET the mapping and retry with the current revision.',
+      });
+    }
+
+    const template = await this.requireTemplate(
+      organizationId,
+      session.templateId,
+    );
+
+    let canonical;
+    try {
+      canonical = canonicalizeMapping(
+        dto.mappings,
+        template.fields,
+        session.columns,
+      );
+    } catch (error) {
+      if (error instanceof MappingValidationError) {
+        throw new UnprocessableEntityException({
+          code: error.code,
+          message: error.message,
+        });
+      }
+      throw error;
+    }
+
+    const currentMappings = parseStoredMapping(session.mapping);
+    if (areMappingsSemanticallyEqual(canonical.mappings, currentMappings)) {
+      return this.toMappingResponse(session, template, canonical);
+    }
+
+    const updated = await this.imports.replaceMapping(
+      organizationId,
+      importId,
+      dto.expectedRevision,
+      canonical.mappings,
+    );
+    if (updated === null) {
+      return await this.throwMappingWriteConflict(organizationId, importId);
+    }
+
+    return this.toMappingResponse(updated, template, canonical);
   }
 
   async uploadFile(
@@ -282,6 +362,96 @@ export class ImportService {
       await this.handleUploadFailure(organizationId, importId, error);
       throw this.toHttpError(error);
     }
+  }
+
+  private async requireSession(
+    organizationId: string,
+    importId: string,
+  ): Promise<ImportSessionRecord> {
+    const session = await this.imports.findByIdForOrganization(
+      organizationId,
+      importId,
+    );
+    if (!session) {
+      throw new NotFoundException({
+        code: 'IMPORT.NOT_FOUND',
+        message: 'Import session not found.',
+      });
+    }
+    return session;
+  }
+
+  private async requireTemplate(
+    organizationId: string,
+    templateId: string,
+  ): Promise<ImportTemplateRecord> {
+    const template = await this.templates.findByIdForOrganization(
+      organizationId,
+      templateId,
+    );
+    if (!template) {
+      throw new NotFoundException({
+        code: 'TEMPLATE.NOT_FOUND',
+        message: 'Template not found.',
+      });
+    }
+    return template;
+  }
+
+  private assertMappingAllowed(
+    status: ImportSessionRecord['status'],
+  ): void {
+    try {
+      assertCanManageMapping(status);
+    } catch (error) {
+      if (error instanceof ImportSessionTransitionError) {
+        throw new ConflictException({
+          code: error.code,
+          message: error.message,
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async throwMappingWriteConflict(
+    organizationId: string,
+    importId: string,
+  ): Promise<never> {
+    const current = await this.imports.findByIdForOrganization(
+      organizationId,
+      importId,
+    );
+    if (!current) {
+      throw new NotFoundException({
+        code: 'IMPORT.NOT_FOUND',
+        message: 'Import session not found.',
+      });
+    }
+    this.assertMappingAllowed(current.status);
+    throw new ConflictException({
+      code: 'IMPORT.MAPPING_REVISION_CONFLICT',
+      message:
+        'Mapping revision is out of date. GET the mapping and retry with the current revision.',
+    });
+  }
+
+  private toMappingResponse(
+    session: ImportSessionRecord,
+    template: ImportTemplateRecord,
+    view = buildMappingView(
+      parseStoredMapping(session.mapping),
+      template.fields,
+      session.columns,
+    ),
+  ): ImportMappingResponseDto {
+    return {
+      importId: session.id,
+      revision: session.mappingRevision,
+      mappings: view.mappings,
+      isComplete: view.isComplete,
+      missingRequiredFields: view.missingRequiredFields,
+    };
   }
 
   private assertCsvSignals(filename: string, mimeType: string): void {

@@ -6,6 +6,11 @@ export type ImportColumnRecord = {
   position: number;
 };
 
+export type ImportMappingPairRecord = {
+  columnPosition: number;
+  fieldKey: string;
+};
+
 export type ImportSessionRecord = {
   id: string;
   organizationId: string;
@@ -20,6 +25,8 @@ export type ImportSessionRecord = {
   delimiter: string | null;
   dataRowCount: number | null;
   storageObjectKey: string | null;
+  mapping: ImportMappingPairRecord[] | unknown;
+  mappingRevision: number;
   uploadedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
