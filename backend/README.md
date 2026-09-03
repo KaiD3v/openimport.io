@@ -77,6 +77,8 @@ The API listens on `PORT` (default 3000).
 - Create import session: `POST /api/v1/imports` (requires `Idempotency-Key`)
 - Upload CSV: `POST /api/v1/imports/:importId/file` (`multipart/form-data`, field `file`)
 - Get import session: `GET /api/v1/imports/:importId`
+- Get column mapping: `GET /api/v1/imports/:importId/mapping`
+- Replace column mapping: `PUT /api/v1/imports/:importId/mapping`
 
 ## Import session flow
 
@@ -117,6 +119,56 @@ Encoding: UTF-8 and UTF-8 with BOM only. A leading UTF-8 BOM (`EF BB BF`) is str
 | `IMPORT_MAX_DATA_ROWS` | `10000` | Max data rows after the header |
 | `IMPORT_MAX_COLUMNS` | `50` | Max header columns |
 | `IMPORT_MAX_FIELD_BYTES` | `65536` | Max bytes per individual field |
+
+### Column mapping (manual)
+
+Mapping associates CSV **column positions** with template **field keys**. It is available only while the session status is `uploaded`. Saving a mapping does not validate rows and does not change session status.
+
+4. Inspect the empty draft:
+
+```bash
+curl -sS http://localhost:3000/api/v1/imports/$IMPORT_ID/mapping \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+Initial response shape:
+
+```json
+{
+  "importId": "...",
+  "revision": 0,
+  "mappings": [],
+  "isComplete": false,
+  "missingRequiredFields": ["sku", "priceInCents"]
+}
+```
+
+5. Save a draft (partial mappings are allowed):
+
+```bash
+curl -sS -X PUT http://localhost:3000/api/v1/imports/$IMPORT_ID/mapping \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"expectedRevision\":0,\"mappings\":[{\"columnPosition\":0,\"fieldKey\":\"sku\"}]}"
+```
+
+Rules:
+- Map by `columnPosition` → `fieldKey` (not by header text).
+- `expectedRevision` must match the current revision or the API returns `409 IMPORT.MAPPING_REVISION_CONFLICT` (GET again and retry).
+- Semantic no-ops (same pairs in any order) keep the revision unchanged.
+- `mappings: []` clears the draft and increments the revision when the previous draft was non-empty.
+- Unknown columns/fields or duplicate associations return `422 IMPORT.MAPPING_INVALID` without changing persistence.
+- Sessions in `created` or `upload_failed` return `409 IMPORT.MAPPING_NOT_ALLOWED`.
+- `isComplete` means at least one association exists and every required template field is mapped. It does **not** mean row validation passed.
+
+6. Complete the mapping:
+
+```bash
+curl -sS -X PUT http://localhost:3000/api/v1/imports/$IMPORT_ID/mapping \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"expectedRevision\":1,\"mappings\":[{\"columnPosition\":0,\"fieldKey\":\"sku\"},{\"columnPosition\":2,\"fieldKey\":\"priceInCents\"}]}"
+```
 
 ## Template contract
 
