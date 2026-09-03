@@ -29,9 +29,10 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  apiKeys        ApiKey[]
-  templates      ImportTemplate[]
-  importSessions ImportSession[]
+  apiKeys            ApiKey[]
+  templates          ImportTemplate[]
+  importSessions     ImportSession[]
+  importAccessTokens ImportAccessToken[]
 
   @@map("organizations")
 }
@@ -46,7 +47,8 @@ model ApiKey {
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuedAccessTokens ImportAccessToken[]
 
   @@index([organizationId], map: "idx_api_keys_organization_id")
   @@map("api_keys")
@@ -103,9 +105,10 @@ model ImportSession {
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  template     ImportTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     ImportTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
   columns      ImportColumn[]
+  accessTokens ImportAccessToken[]
 
   @@unique([organizationId, idempotencyKeyHash], map: "uq_import_sessions_org_idempotency_key_hash")
   @@index([organizationId], map: "idx_import_sessions_organization_id")
@@ -126,4 +129,26 @@ model ImportColumn {
   @@unique([importSessionId, name], map: "uq_import_columns_session_id_name")
   @@index([importSessionId], map: "idx_import_columns_import_session_id")
   @@map("import_columns")
+}
+
+model ImportAccessToken {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  importSessionId String    @map("import_session_id") @db.Uuid
+  issuerApiKeyId  String    @map("issuer_api_key_id") @db.Uuid
+  tokenHash       String    @unique(map: "uq_import_access_tokens_token_hash") @map("token_hash") @db.VarChar(64)
+  tokenPrefix     String    @map("token_prefix") @db.VarChar(24)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  issuerApiKey  ApiKey        @relation(fields: [issuerApiKeyId], references: [id], onDelete: Restrict)
+
+  @@index([importSessionId], map: "idx_import_access_tokens_import_session_id")
+  @@index([organizationId], map: "idx_import_access_tokens_organization_id")
+  @@index([expiresAt], map: "idx_import_access_tokens_expires_at")
+  @@map("import_access_tokens")
 }
