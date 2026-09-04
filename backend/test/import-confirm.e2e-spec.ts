@@ -1253,4 +1253,400 @@ describe('Import confirmation and processing (e2e)', () => {
     });
     expect(recordCountAfter).toBe(recordCountBefore);
   });
+
+  it('reports client results in atomic idempotent batches and summarizes progress', async () => {
+    const tenant = await trackTenant();
+    const other = await trackTenant();
+    const csv = [
+      'sku,name,price',
+      'V1,a,"R$ 10,00"',
+      'BAD1,b,not-a-price',
+      'V2,c,"R$ 20,00"',
+      'V3,d,"R$ 30,00"',
+      'BAD2,e,bad',
+      'V4,f,"R$ 40,00"',
+      'V5,g,"R$ 50,00"',
+      '',
+    ].join('\n');
+
+    const prepared = await prepareConfirmableImport(
+      tenant.apiKey,
+      'client-results-001',
+      csv,
+    );
+
+    const beforeReady = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-batch-a')
+      .send({
+        executionId: '99999999-9999-4999-8999-999999999999',
+        results: [{ recordNumber: 1, outcome: 'accepted' }],
+      })
+      .expect(409);
+    expect(beforeReady.body.code).toBe('IMPORT.RESULTS_NOT_ALLOWED');
+
+    const confirmed = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/confirm`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedMappingRevision: prepared.revision,
+        expectedContentSha256: prepared.contentSha256,
+      })
+      .expect(202);
+
+    const ready = await waitForReady(tenant.apiKey, prepared.importId);
+    expect(ready.status).toBe('ready');
+    expect(ready.progress).toMatchObject({ validRows: 5, invalidRows: 2 });
+    const executionId = confirmed.body.executionId as string;
+
+    const openApi = await request(app.getHttpServer())
+      .get('/docs-json')
+      .expect(200);
+    expect(
+      openApi.body.paths['/api/v1/imports/{importId}/results'].post.security,
+    ).toEqual([{ 'api-key': [] }]);
+    expect(
+      openApi.body.paths['/api/v1/imports/{importId}/results/summary'].get
+        .security,
+    ).toEqual([{ 'api-key': [] }]);
+
+    const missingKey = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        executionId,
+        results: [{ recordNumber: 1, outcome: 'accepted' }],
+      })
+      .expect(400);
+    expect(missingKey.body.code).toBe('VALIDATION.FAILED');
+
+    const page1 = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    const page2 = await request(app.getHttpServer())
+      .get(
+        `/api/v1/imports/${prepared.importId}/valid-rows?limit=3&after=${encodeURIComponent(page1.body.nextCursor)}`,
+      )
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(page1.body.data).toHaveLength(2);
+    expect(page2.body.data).toHaveLength(3);
+
+    const batchABody = {
+      executionId,
+      results: [
+        { recordNumber: 1, outcome: 'accepted', clientRecordId: 'sku-v1' },
+        {
+          recordNumber: 3,
+          outcome: 'rejected',
+          error: { code: 'SKU_EXISTS', message: 'Already exists' },
+        },
+      ],
+    };
+
+    const batchA = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-batch-a')
+      .send(batchABody)
+      .expect(200);
+    expect(batchA.headers['cache-control']).toBe('no-store');
+    expect(batchA.body.replayed).toBe(false);
+    expect(batchA.body.summary).toMatchObject({
+      totalValid: 5,
+      reported: 2,
+      accepted: 1,
+      rejected: 1,
+      pending: 3,
+      isComplete: false,
+    });
+    expect(batchA.body.summary.reported).toBe(
+      batchA.body.summary.accepted + batchA.body.summary.rejected,
+    );
+    expect(batchA.body.summary.pending).toBe(
+      batchA.body.summary.totalValid - batchA.body.summary.reported,
+    );
+
+    const replay = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-batch-a')
+      .send(batchABody)
+      .expect(200);
+    expect(replay.body.replayed).toBe(true);
+    expect(replay.body.batchId).toBe(batchA.body.batchId);
+    expect(replay.body.summary).toEqual(batchA.body.summary);
+
+    const reused = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-batch-a')
+      .send({
+        executionId,
+        results: [{ recordNumber: 4, outcome: 'accepted' }],
+      })
+      .expect(409);
+    expect(reused.body.code).toBe('IDEMPOTENCY.KEY_REUSED');
+
+    const duplicateInRequest = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-dup')
+      .send({
+        executionId,
+        results: [
+          { recordNumber: 4, outcome: 'accepted' },
+          { recordNumber: 4, outcome: 'accepted' },
+        ],
+      })
+      .expect(422);
+    expect(duplicateInRequest.body.code).toBe('IMPORT.RESULTS_INVALID');
+
+    const invalidRow = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-invalid-row')
+      .send({
+        executionId,
+        results: [{ recordNumber: 2, outcome: 'accepted' }],
+      })
+      .expect(422);
+    expect(invalidRow.body.code).toBe('IMPORT.RESULTS_INVALID');
+
+    const wrongExecution = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-wrong-exec')
+      .send({
+        executionId: '99999999-9999-4999-8999-999999999999',
+        results: [{ recordNumber: 4, outcome: 'accepted' }],
+      })
+      .expect(422);
+    expect(wrongExecution.body.code).toBe('IMPORT.RESULTS_INVALID');
+
+    const conflict = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-conflict')
+      .send({
+        executionId,
+        results: [
+          {
+            recordNumber: 1,
+            outcome: 'rejected',
+            error: { code: 'NOPE', message: 'changed mind' },
+          },
+        ],
+      })
+      .expect(409);
+    expect(conflict.body.code).toBe('IMPORT.RESULTS_CONFLICT');
+
+    const concurrent = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/v1/imports/${prepared.importId}/results`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('Idempotency-Key', 'client-results-concurrent')
+        .send({
+          executionId,
+          results: [{ recordNumber: 4, outcome: 'accepted' }],
+        }),
+      request(app.getHttpServer())
+        .post(`/api/v1/imports/${prepared.importId}/results`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('Idempotency-Key', 'client-results-concurrent')
+        .send({
+          executionId,
+          results: [{ recordNumber: 4, outcome: 'accepted' }],
+        }),
+    ]);
+    expect(concurrent.map((r) => r.status).sort()).toEqual([200, 200]);
+    expect(concurrent.every((r) => r.body.batchId === concurrent[0].body.batchId)).toBe(
+      true,
+    );
+    expect(concurrent.filter((r) => r.body.replayed).length).toBe(1);
+
+    const batchB = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-batch-b')
+      .send({
+        executionId,
+        results: [
+          { recordNumber: 6, outcome: 'accepted' },
+          { recordNumber: 7, outcome: 'accepted' },
+        ],
+      })
+      .expect(200);
+    expect(batchB.body.summary).toMatchObject({
+      totalValid: 5,
+      reported: 5,
+      accepted: 4,
+      rejected: 1,
+      pending: 0,
+      isComplete: true,
+    });
+
+    const summary = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/results/summary`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(summary.headers['cache-control']).toBe('no-store');
+    expect(summary.body).toEqual(batchB.body.summary);
+    expect(JSON.stringify(summary.body)).not.toContain('organizationId');
+    expect(summary.body).not.toHaveProperty('data');
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(after.body.status).toBe('ready');
+
+    const otherTenant = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/results/summary`)
+      .set('Authorization', `Bearer ${other.apiKey}`)
+      .expect(404);
+    expect(otherTenant.body.code).toBe('IMPORT.NOT_FOUND');
+
+    const issued = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/access-tokens`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({})
+      .expect(201);
+    const forbidden = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${issued.body.accessToken}`)
+      .set('Idempotency-Key', 'client-results-token')
+      .send({
+        executionId,
+        results: [{ recordNumber: 1, outcome: 'accepted' }],
+      })
+      .expect(403);
+    expect(forbidden.body.code).toBe('AUTH.INSUFFICIENT_SCOPE');
+  });
+
+  it('marks ready imports with zero valid rows as complete in the results summary', async () => {
+    const tenant = await trackTenant();
+    const csv = ['sku,name,price', 'BAD1,b,not-a-price', 'BAD2,e,bad', ''].join(
+      '\n',
+    );
+    const prepared = await prepareConfirmableImport(
+      tenant.apiKey,
+      'client-results-zero-valid',
+      csv,
+    );
+    await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/confirm`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedMappingRevision: prepared.revision,
+        expectedContentSha256: prepared.contentSha256,
+      })
+      .expect(202);
+    const ready = await waitForReady(tenant.apiKey, prepared.importId);
+    expect(ready.status).toBe('ready');
+    expect(ready.progress).toMatchObject({ validRows: 0, invalidRows: 2 });
+
+    const summary = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/results/summary`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(summary.body).toMatchObject({
+      totalValid: 0,
+      reported: 0,
+      accepted: 0,
+      rejected: 0,
+      pending: 0,
+      isComplete: true,
+    });
+  });
+
+  it('rejects recordNumber outside PostgreSQL INTEGER before persisting results', async () => {
+    const tenant = await trackTenant();
+    const prepared = await prepareConfirmableImport(
+      tenant.apiKey,
+      'client-results-record-bounds',
+    );
+    const confirmed = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/confirm`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedMappingRevision: prepared.revision,
+        expectedContentSha256: prepared.contentSha256,
+      })
+      .expect(202);
+    await waitForReady(tenant.apiKey, prepared.importId);
+    const executionId = confirmed.body.executionId as string;
+
+    const openApi = await request(app.getHttpServer())
+      .get('/docs-json')
+      .expect(200);
+    const recordNumberSchema =
+      openApi.body.components.schemas.ImportResultItemDto.properties
+        .recordNumber;
+    expect(recordNumberSchema.minimum).toBe(1);
+    expect(recordNumberSchema.maximum).toBe(2_147_483_647);
+
+    const beforeBatches = await prisma.importResultBatch.count({
+      where: {
+        organizationId: tenant.organizationId,
+        importSessionId: prepared.importId,
+      },
+    });
+    const beforeResults = await prisma.importRecordResult.count({
+      where: {
+        organizationId: tenant.organizationId,
+        importSessionId: prepared.importId,
+      },
+    });
+
+    for (const [index, recordNumber] of [
+      2_147_483_648,
+      Number.MAX_SAFE_INTEGER,
+      1e100,
+    ].entries()) {
+      const response = await request(app.getHttpServer())
+        .post(`/api/v1/imports/${prepared.importId}/results`)
+        .set('Authorization', `Bearer ${tenant.apiKey}`)
+        .set('Idempotency-Key', `client-results-oob-${index}`)
+        .set('X-Request-ID', `req_record_bounds_${index}`)
+        .send({
+          executionId,
+          results: [{ recordNumber, outcome: 'accepted' }],
+        })
+        .expect(400);
+      expect(response.body.code).toBe('VALIDATION.FAILED');
+      expect(response.headers['x-request-id']).toBe(`req_record_bounds_${index}`);
+      expect(response.body.traceId).toBe(`req_record_bounds_${index}`);
+    }
+
+    const unknownInRange = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/results`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .set('Idempotency-Key', 'client-results-unknown-in-range')
+      .send({
+        executionId,
+        results: [{ recordNumber: 2_147_483_647, outcome: 'accepted' }],
+      })
+      .expect(422);
+    expect(unknownInRange.body.code).toBe('IMPORT.RESULTS_INVALID');
+
+    expect(
+      await prisma.importResultBatch.count({
+        where: {
+          organizationId: tenant.organizationId,
+          importSessionId: prepared.importId,
+        },
+      }),
+    ).toBe(beforeBatches);
+    expect(
+      await prisma.importRecordResult.count({
+        where: {
+          organizationId: tenant.organizationId,
+          importSessionId: prepared.importId,
+        },
+      }),
+    ).toBe(beforeResults);
+  });
 });
