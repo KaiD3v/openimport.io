@@ -123,6 +123,30 @@ export const envSchema = z
       .positive()
       .max(200)
       .default(25),
+    IMPORT_FILE_RETENTION_HOURS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2160)
+      .default(168),
+    IMPORT_FILE_CLEANUP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3_600_000)
+      .default(60_000),
+    IMPORT_FILE_CLEANUP_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .default(25),
+    IMPORT_FILE_CLEANUP_CLAIM_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3_600_000)
+      .default(120_000),
     WEBHOOK_SECRET_ENCRYPTION_KEY: z
       .string()
       .regex(/^[0-9a-f]{64}$/, {

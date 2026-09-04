@@ -126,4 +126,29 @@ describe('loadEnv', () => {
     process.env.HEALTH_PROBE_TIMEOUT_MS = '20000';
     expect(() => loadEnv()).toThrow(/HEALTH_PROBE_TIMEOUT_MS/);
   });
+
+  it('defaults and bounds IMPORT_FILE_RETENTION_HOURS', () => {
+    Object.assign(process.env, REQUIRED);
+    delete process.env.IMPORT_FILE_RETENTION_HOURS;
+
+    expect(loadEnv().IMPORT_FILE_RETENTION_HOURS).toBe(168);
+
+    process.env.IMPORT_FILE_RETENTION_HOURS = '0';
+    expect(() => loadEnv()).toThrow(/IMPORT_FILE_RETENTION_HOURS/);
+
+    process.env.IMPORT_FILE_RETENTION_HOURS = '2161';
+    expect(() => loadEnv()).toThrow(/IMPORT_FILE_RETENTION_HOURS/);
+  });
+
+  it('defaults IMPORT_FILE_CLEANUP_* knobs', () => {
+    Object.assign(process.env, REQUIRED);
+    delete process.env.IMPORT_FILE_CLEANUP_INTERVAL_MS;
+    delete process.env.IMPORT_FILE_CLEANUP_BATCH_SIZE;
+    delete process.env.IMPORT_FILE_CLEANUP_CLAIM_MS;
+
+    const env = loadEnv();
+    expect(env.IMPORT_FILE_CLEANUP_INTERVAL_MS).toBe(60_000);
+    expect(env.IMPORT_FILE_CLEANUP_BATCH_SIZE).toBe(25);
+    expect(env.IMPORT_FILE_CLEANUP_CLAIM_MS).toBe(120_000);
+  });
 });
