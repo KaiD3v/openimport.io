@@ -10,6 +10,7 @@ const REQUIRED = {
   S3_ACCESS_KEY_ID: 'openimport',
   S3_SECRET_ACCESS_KEY: 'openimportsecret',
   S3_BUCKET: 'openimport',
+  REDIS_URL: 'redis://localhost:6379',
 };
 
 describe('loadEnv', () => {
@@ -54,6 +55,20 @@ describe('loadEnv', () => {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       expect(message).not.toContain('supersecret-db-password');
+      expect(message).not.toContain('https://example.com');
+    }
+  });
+
+  it('rejects a non-Redis REDIS_URL without echoing the value', () => {
+    Object.assign(process.env, REQUIRED);
+    process.env.REDIS_URL = 'https://example.com/not-redis?password=supersecret-redis-password';
+
+    expect(() => loadEnv()).toThrow(/REDIS_URL/);
+    try {
+      loadEnv();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).not.toContain('supersecret-redis-password');
       expect(message).not.toContain('https://example.com');
     }
   });

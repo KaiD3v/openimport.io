@@ -23,6 +23,15 @@ function isPostgresConnectionString(value: string): boolean {
   }
 }
 
+function isRedisConnectionString(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'redis:' || url.protocol === 'rediss:';
+  } catch {
+    return false;
+  }
+}
+
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -55,6 +64,53 @@ export const envSchema = z
       .enum(['true', 'false', '1', '0'])
       .default('true')
       .transform((value) => value === 'true' || value === '1'),
+    REDIS_URL: z
+      .string()
+      .min(1)
+      .refine(isRedisConnectionString, {
+        message: 'must be a Redis connection string',
+      }),
+    IMPORT_WORKER_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(32)
+      .default(2),
+    IMPORT_WORKER_MAX_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(20)
+      .default(5),
+    IMPORT_WORKER_BACKOFF_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2_000),
+    IMPORT_PERSIST_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(1_000)
+      .default(100),
+    IMPORT_REJECTED_ROWS_MAX_LIMIT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .default(50),
+    IMPORT_JOB_RECONCILE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3_600_000)
+      .default(15_000),
+    IMPORT_JOB_RECONCILE_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .default(25),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.ALLOWED_ORIGINS.includes('*')) {
