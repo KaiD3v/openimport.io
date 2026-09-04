@@ -1,6 +1,10 @@
 export type ImportSessionStatusValue =
   | 'created'
   | 'uploaded'
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'processing_failed'
   | 'upload_failed';
 
 export class ImportSessionTransitionError extends Error {
@@ -63,7 +67,7 @@ export function assertCanManageMapping(
 
   throw new ImportSessionTransitionError(
     'IMPORT.MAPPING_NOT_ALLOWED',
-    'Column mapping is only available after a CSV file has been uploaded.',
+    'Column mapping is only available after a CSV file has been uploaded and before confirmation.',
   );
 }
 
@@ -76,6 +80,63 @@ export function assertCanPreview(
 
   throw new ImportSessionTransitionError(
     'IMPORT.PREVIEW_NOT_ALLOWED',
-    'Preview is only available after a CSV file has been uploaded.',
+    'Preview is only available after a CSV file has been uploaded and before confirmation.',
+  );
+}
+
+export function assertCanConfirm(status: ImportSessionStatusValue): void {
+  if (status === 'uploaded') {
+    return;
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.CONFIRMATION_NOT_ALLOWED',
+    'Confirmation is only available for uploaded sessions with a complete mapping.',
+  );
+}
+
+export function nextStatusAfterConfirm(
+  status: ImportSessionStatusValue,
+): 'queued' {
+  assertCanConfirm(status);
+  return 'queued';
+}
+
+export function nextStatusAfterProcessingStart(
+  status: ImportSessionStatusValue,
+): 'processing' {
+  if (status === 'queued') {
+    return 'processing';
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.CONFIRMATION_NOT_ALLOWED',
+    'Processing can only start from a queued import session.',
+  );
+}
+
+export function nextStatusAfterProcessingSuccess(
+  status: ImportSessionStatusValue,
+): 'ready' {
+  if (status === 'processing') {
+    return 'ready';
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.CONFIRMATION_NOT_ALLOWED',
+    'A ready snapshot can only be published from a processing session.',
+  );
+}
+
+export function nextStatusAfterProcessingFailure(
+  status: ImportSessionStatusValue,
+): 'processing_failed' {
+  if (status === 'queued' || status === 'processing') {
+    return 'processing_failed';
+  }
+
+  throw new ImportSessionTransitionError(
+    'IMPORT.CONFIRMATION_NOT_ALLOWED',
+    'Processing failure can only be recorded for queued or processing sessions.',
   );
 }

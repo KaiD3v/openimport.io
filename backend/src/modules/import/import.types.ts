@@ -1,4 +1,9 @@
-import type { ImportSessionStatus } from '../../generated/prisma/client.js';
+import type {
+  ImportExecutionStatus,
+  ImportRecordClassification,
+  ImportSessionStatus,
+} from '../../generated/prisma/client.js';
+import type { FieldError } from './normalize/normalize.js';
 
 export type ImportColumnRecord = {
   id: string;
@@ -28,6 +33,7 @@ export type ImportSessionRecord = {
   mapping: ImportMappingPairRecord[] | unknown;
   mappingRevision: number;
   uploadedAt: Date | null;
+  confirmedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   columns: ImportColumnRecord[];
@@ -48,4 +54,46 @@ export type MarkUploadedData = {
   dataRowCount: number;
   storageObjectKey: string;
   columns: Array<{ name: string; position: number }>;
+};
+
+export type ImportExecutionRecord = {
+  id: string;
+  organizationId: string;
+  importSessionId: string;
+  status: ImportExecutionStatus;
+  confirmationFingerprint: string;
+  expectedMappingRevision: number;
+  expectedContentSha256: string;
+  jobId: string;
+  attempt: number;
+  processedRows: number;
+  totalRows: number | null;
+  validRows: number;
+  invalidRows: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateExecutionData = {
+  confirmationFingerprint: string;
+  expectedMappingRevision: number;
+  expectedContentSha256: string;
+  jobId: string;
+  totalRows: number | null;
+};
+
+export type ImportRecordWrite = {
+  recordNumber: number;
+  classification: ImportRecordClassification;
+  payload: Record<string, string | number> | null;
+  errors: FieldError[] | null;
+};
+
+export type ImportRejectedRecord = {
+  recordNumber: number;
+  errors: FieldError[];
 };
