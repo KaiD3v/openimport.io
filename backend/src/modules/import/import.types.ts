@@ -97,3 +97,8 @@ export type ImportRejectedRecord = {
   recordNumber: number;
   errors: FieldError[];
 };
+
+export type ImportValidRecord = {
+  recordNumber: number;
+  payload: unknown;
+};

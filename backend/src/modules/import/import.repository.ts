@@ -9,6 +9,7 @@ import type {
   ImportRecordWrite,
   ImportRejectedRecord,
   ImportSessionRecord,
+  ImportValidRecord,
   MarkUploadedData,
 } from './import.types.js';
 import type { ProgressCounters } from './processing/progress.js';
@@ -591,6 +592,35 @@ export class ImportRepository {
     return rows.map((row) => ({
       recordNumber: row.recordNumber,
       errors: (row.errors ?? []) as FieldError[],
+    }));
+  }
+
+  async listValidRows(params: {
+    organizationId: string;
+    importSessionId: string;
+    executionId: string;
+    afterRecordNumber: number;
+    limit: number;
+  }): Promise<ImportValidRecord[]> {
+    const rows = await this.prisma.importRecord.findMany({
+      where: {
+        organizationId: params.organizationId,
+        importSessionId: params.importSessionId,
+        executionId: params.executionId,
+        classification: 'valid',
+        recordNumber: { gt: params.afterRecordNumber },
+      },
+      orderBy: { recordNumber: 'asc' },
+      take: params.limit,
+      select: {
+        recordNumber: true,
+        payload: true,
+      },
+    });
+
+    return rows.map((row) => ({
+      recordNumber: row.recordNumber,
+      payload: row.payload,
     }));
   }
 }

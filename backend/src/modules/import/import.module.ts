@@ -14,6 +14,7 @@ import { ImportProcessingJobPublisher } from './processing/ensure-processable-jo
 import { ImportProcessingReconciler } from './processing/import-processing.reconciler.js';
 import { ImportProcessingWorker } from './processing/import-processing.worker.js';
 import { RejectedRowsService } from './processing/rejected-rows.service.js';
+import { ValidRowsService } from './processing/valid-rows.service.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { RejectedRowsService } from './processing/rejected-rows.service.js';
     PreviewService,
     ConfirmService,
     RejectedRowsService,
+    ValidRowsService,
     ImportRepository,
     ImportProcessingJobPublisher,
     ImportProcessingWorker,

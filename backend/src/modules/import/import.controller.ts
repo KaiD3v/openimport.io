@@ -52,6 +52,8 @@ import { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import { ImportPreviewResponseDto } from './dto/import-preview-response.dto.js';
 import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
 import { ListRejectedRowsQueryDto } from './dto/list-rejected-rows-query.dto.js';
+import { ListValidRowsQueryDto } from './dto/list-valid-rows-query.dto.js';
+import { ValidRowsResponseDto } from './dto/valid-rows-response.dto.js';
 import {
   IdempotencyKeyReusedErrorDto,
   ImportConfirmationNotAllowedErrorDto,
@@ -76,6 +78,7 @@ import { ConfirmService } from './confirm/confirm.service.js';
 import { ImportService } from './import.service.js';
 import { PreviewService } from './preview/preview.service.js';
 import { RejectedRowsService } from './processing/rejected-rows.service.js';
+import { ValidRowsService } from './processing/valid-rows.service.js';
 
 const importIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
@@ -112,6 +115,7 @@ export class ImportController {
     private readonly previews: PreviewService,
     private readonly confirms: ConfirmService,
     private readonly rejectedRows: RejectedRowsService,
+    private readonly validRows: ValidRowsService,
   ) {}
 
   @Post()
@@ -366,6 +370,34 @@ export class ImportController {
     @Query() query: ListRejectedRowsQueryDto,
   ): Promise<RejectedRowsResponseDto> {
     return this.rejectedRows.list(organization.organizationId, importId, query);
+  }
+
+  @Get(':importId/valid-rows')
+  @ApiKeyOnlyAuth()
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'List normalized valid records from the ready snapshot (cursor pagination). API key only — not available to import access tokens.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'after', required: false, type: String })
+  @ApiResponse({
+    status: 200,
+    type: ValidRowsResponseDto,
+    description: 'Page of valid rows. `nextCursor` is set when another page exists.',
+  })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({ status: 409, type: ImportSnapshotNotReadyErrorDto })
+  listValidRows(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Query() query: ListValidRowsQueryDto,
+  ): Promise<ValidRowsResponseDto> {
+    return this.validRows.list(organization.organizationId, importId, query);
   }
 
   @Post(':importId/file')
