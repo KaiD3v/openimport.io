@@ -55,14 +55,15 @@ describe('OpenImport API (e2e)', () => {
     expect(response.body).toEqual({ status: 'ok' });
   });
 
-  it('reports readiness without exposing the database URL', async () => {
+  it('reports readiness without exposing infrastructure details', async () => {
     const response = await request(app.getHttpServer())
       .get('/health/ready')
       .expect(200);
 
     expect(response.body).toEqual({ status: 'ok' });
-    expect(JSON.stringify(response.body)).not.toContain('DATABASE_URL');
-    expect(JSON.stringify(response.body)).not.toContain('postgresql://');
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /DATABASE_URL|REDIS_URL|postgresql:\/\/|redis:\/\/|S3_|bucket|minio/i,
+    );
   });
 
   it('exposes OpenAPI JSON with Bearer API key auth', async () => {
