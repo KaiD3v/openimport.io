@@ -948,6 +948,7 @@ describe('Import sessions (e2e)', () => {
       '/api/v1/imports/{importId}/rejected-rows',
       'get',
     );
+    expectApiKeyOnly('/api/v1/imports/{importId}/valid-rows', 'get');
   });
 
   async function createUploadedSession(

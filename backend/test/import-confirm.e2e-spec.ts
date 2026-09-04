@@ -1071,6 +1071,18 @@ describe('Import confirmation and processing (e2e)', () => {
     expect(
       response.body.paths['/api/v1/imports/{importId}/rejected-rows'],
     ).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/valid-rows'],
+    ).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/valid-rows'].get.security,
+    ).toEqual([{ 'api-key': [] }]);
+    expect(
+      response.body.components.schemas.ValidRowDto.properties.data
+        .additionalProperties,
+    ).toEqual({
+      oneOf: [{ type: 'string' }, { type: 'number' }],
+    });
     const spec = JSON.stringify(response.body);
     expect(spec).toContain('IMPORT.CONFIRMATION_NOT_ALLOWED');
     expect(spec).toContain('IMPORT.PROCESSING_UNAVAILABLE');
@@ -1079,5 +1091,166 @@ describe('Import confirmation and processing (e2e)', () => {
     expect(spec).toContain('processing_failed');
     expect(spec).toContain('failure');
     expect(spec).toContain('IMPORT.PROCESSING_FAILED');
+  });
+
+  it('paginates valid rows for the client backend with API key only', async () => {
+    const tenant = await trackTenant();
+    const other = await trackTenant();
+    const csv = [
+      'sku,name,price',
+      'V1,a,"R$ 10,00"',
+      'BAD1,b,not-a-price',
+      'V2,c,"R$ 20,00"',
+      'V3,d,"R$ 30,00"',
+      'BAD2,e,bad',
+      'V4,f,"R$ 40,00"',
+      'V5,g,"R$ 50,00"',
+      '',
+    ].join('\n');
+
+    const prepared = await prepareConfirmableImport(
+      tenant.apiKey,
+      'valid-rows-paginate-001',
+      csv,
+    );
+
+    const beforeReady = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(409);
+    expect(beforeReady.body.code).toBe('IMPORT.SNAPSHOT_NOT_READY');
+
+    const confirmed = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/confirm`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedMappingRevision: prepared.revision,
+        expectedContentSha256: prepared.contentSha256,
+      })
+      .expect(202);
+
+    const ready = await waitForReady(tenant.apiKey, prepared.importId);
+    expect(ready.status).toBe('ready');
+    expect(ready.progress).toMatchObject({
+      processedRows: 7,
+      validRows: 5,
+      invalidRows: 2,
+    });
+
+    const progressBefore = {
+      ...(ready.progress as Record<string, unknown>),
+    };
+    const statusBefore = ready.status;
+    const recordCountBefore = await prisma.importRecord.count({
+      where: {
+        organizationId: tenant.organizationId,
+        importSessionId: prepared.importId,
+      },
+    });
+
+    const page1 = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(page1.headers['cache-control']).toBe('no-store');
+    expect(page1.body.importId).toBe(prepared.importId);
+    expect(page1.body.executionId).toBe(confirmed.body.executionId);
+    expect(page1.body.data).toEqual([
+      { recordNumber: 1, data: { sku: 'V1', priceInCents: 1000 } },
+      { recordNumber: 3, data: { sku: 'V2', priceInCents: 2000 } },
+    ]);
+    expect(page1.body.nextCursor).toEqual(expect.any(String));
+    expect(JSON.stringify(page1.body)).not.toContain('organizationId');
+    expect(JSON.stringify(page1.body)).not.toContain('storageObjectKey');
+    expect(page1.body.data[0]).not.toHaveProperty('id');
+    expect(page1.body.data[0]).not.toHaveProperty('errors');
+    expect(page1.body.data[0]).not.toHaveProperty('payload');
+
+    const page1Again = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(page1Again.body).toEqual(page1.body);
+
+    const page2 = await request(app.getHttpServer())
+      .get(
+        `/api/v1/imports/${prepared.importId}/valid-rows?limit=2&after=${encodeURIComponent(page1.body.nextCursor)}`,
+      )
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(page2.body.data).toEqual([
+      { recordNumber: 4, data: { sku: 'V3', priceInCents: 3000 } },
+      { recordNumber: 6, data: { sku: 'V4', priceInCents: 4000 } },
+    ]);
+    expect(page2.body.nextCursor).toEqual(expect.any(String));
+
+    const page3 = await request(app.getHttpServer())
+      .get(
+        `/api/v1/imports/${prepared.importId}/valid-rows?limit=2&after=${encodeURIComponent(page2.body.nextCursor)}`,
+      )
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(page3.body.data).toEqual([
+      { recordNumber: 7, data: { sku: 'V5', priceInCents: 5000 } },
+    ]);
+    expect(page3.body.nextCursor).toBeNull();
+
+    const all = [...page1.body.data, ...page2.body.data, ...page3.body.data] as Array<{
+      recordNumber: number;
+      data: Record<string, unknown>;
+    }>;
+    expect(all.map((row) => row.recordNumber)).toEqual([1, 3, 4, 6, 7]);
+    expect(new Set(all.map((row) => row.recordNumber)).size).toBe(5);
+
+    const invalidCursor = await request(app.getHttpServer())
+      .get(
+        `/api/v1/imports/${prepared.importId}/valid-rows?limit=2&after=not-a-cursor`,
+      )
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(400);
+    expect(invalidCursor.body.code).toBe('VALIDATION.FAILED');
+
+    const foreignCursor = Buffer.from(
+      `v1:99999999-9999-9999-9999-999999999999:1`,
+      'utf8',
+    ).toString('base64url');
+    const otherExecution = await request(app.getHttpServer())
+      .get(
+        `/api/v1/imports/${prepared.importId}/valid-rows?limit=2&after=${encodeURIComponent(foreignCursor)}`,
+      )
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(400);
+    expect(otherExecution.body.code).toBe('VALIDATION.FAILED');
+
+    const otherTenant = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${other.apiKey}`)
+      .expect(404);
+    expect(otherTenant.body.code).toBe('IMPORT.NOT_FOUND');
+
+    const issued = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/access-tokens`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({})
+      .expect(201);
+    const forbidden = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=2`)
+      .set('Authorization', `Bearer ${issued.body.accessToken}`)
+      .expect(403);
+    expect(forbidden.body.code).toBe('AUTH.INSUFFICIENT_SCOPE');
+
+    const after = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(after.body.status).toBe(statusBefore);
+    expect(after.body.progress).toEqual(progressBefore);
+    const recordCountAfter = await prisma.importRecord.count({
+      where: {
+        organizationId: tenant.organizationId,
+        importSessionId: prepared.importId,
+      },
+    });
+    expect(recordCountAfter).toBe(recordCountBefore);
   });
 });
