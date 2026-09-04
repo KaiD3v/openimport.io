@@ -1,7 +1,11 @@
 import { z } from 'zod'
-import { importSessionSchema } from './import-context.schema.ts'
+import {
+  importFailureSchema,
+  importProgressSchema,
+  importSessionSchema,
+} from './import-context.schema.ts'
 
-export { importSessionSchema }
+export { importSessionSchema, importProgressSchema, importFailureSchema }
 
 export const importMappingSchema = z.object({
   importId: z.uuid(),
@@ -59,7 +63,57 @@ export const postPreviewBodySchema = z.object({
   limit: z.number().int().min(1).max(100).optional(),
 })
 
+export const confirmImportBodySchema = z.object({
+  expectedMappingRevision: z.number().int().nonnegative(),
+  expectedContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+})
+
+export const confirmImportResponseSchema = z.object({
+  importId: z.uuid(),
+  executionId: z.uuid(),
+  status: z.enum(['queued', 'processing', 'ready', 'processing_failed']),
+  expectedMappingRevision: z.number().int().nonnegative(),
+  expectedContentSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  progress: importProgressSchema,
+  failure: importFailureSchema.nullable(),
+  replayed: z.boolean(),
+}).superRefine((data, ctx) => {
+  if (data.status === 'processing_failed' && data.failure === null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['failure'],
+      message: 'failure is required when status is processing_failed',
+    })
+  }
+  if (data.status !== 'processing_failed' && data.failure !== null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['failure'],
+      message: 'failure must be null unless status is processing_failed',
+    })
+  }
+})
+
+export const rejectedRowsResponseSchema = z.object({
+  data: z.array(
+    z.object({
+      recordNumber: z.number().int().positive(),
+      errors: z.array(
+        z.object({
+          fieldKey: z.string(),
+          code: z.string(),
+          message: z.string(),
+        }),
+      ),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+})
+
 export type ImportSession = z.infer<typeof importSessionSchema>
 export type ImportMapping = z.infer<typeof importMappingSchema>
 export type ImportPreview = z.infer<typeof importPreviewSchema>
 export type PutMappingBody = z.infer<typeof putMappingBodySchema>
+export type ConfirmImportBody = z.infer<typeof confirmImportBodySchema>
+export type ConfirmImportResponse = z.infer<typeof confirmImportResponseSchema>
+export type RejectedRowsResponse = z.infer<typeof rejectedRowsResponseSchema>

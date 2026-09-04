@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { assertSingleCsvFile, buildUploadFormData } from './upload-form.ts'
 import {
+  confirmImportResponseSchema,
   importMappingSchema,
   importPreviewSchema,
   putMappingBodySchema,
+  rejectedRowsResponseSchema,
 } from './operation-schemas.ts'
 import { IMPORT_ID } from '../test/fixtures.ts'
 
@@ -87,5 +89,60 @@ describe('operation schemas', () => {
 
     expect(parsed.sampleTruncated).toBe(true)
     expect(parsed.rows[1]?.data).toBeNull()
+  })
+
+  it('accepts confirm response and rejected rows page', () => {
+    const confirm = confirmImportResponseSchema.parse({
+      importId: IMPORT_ID,
+      executionId: '44444444-4444-4444-8444-444444444444',
+      status: 'queued',
+      expectedMappingRevision: 1,
+      expectedContentSha256: 'a'.repeat(64),
+      progress: {
+        processedRows: 0,
+        totalRows: null,
+        validRows: 0,
+        invalidRows: 0,
+      },
+      failure: null,
+      replayed: false,
+    })
+    expect(confirm.status).toBe('queued')
+
+    const rejected = rejectedRowsResponseSchema.parse({
+      data: [
+        {
+          recordNumber: 3,
+          errors: [
+            {
+              fieldKey: 'sku',
+              code: 'FIELD.REQUIRED',
+              message: 'missing',
+            },
+          ],
+        },
+      ],
+      nextCursor: 'next',
+    })
+    expect(rejected.nextCursor).toBe('next')
+  })
+
+  it('rejects confirm processing_failed without failure', () => {
+    const result = confirmImportResponseSchema.safeParse({
+      importId: IMPORT_ID,
+      executionId: '44444444-4444-4444-8444-444444444444',
+      status: 'processing_failed',
+      expectedMappingRevision: 1,
+      expectedContentSha256: 'a'.repeat(64),
+      progress: {
+        processedRows: 1,
+        totalRows: 10,
+        validRows: 0,
+        invalidRows: 0,
+      },
+      failure: null,
+      replayed: false,
+    })
+    expect(result.success).toBe(false)
   })
 })

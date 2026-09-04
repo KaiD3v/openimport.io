@@ -3,6 +3,9 @@ import {
   IMPORT_ID,
   OTHER_IMPORT_ID,
   createdContext,
+  processingFailedContext,
+  queuedContext,
+  readyContext,
   uploadedContext,
   uploadFailedContext,
 } from '../test/fixtures.ts'
@@ -15,6 +18,8 @@ describe('importContextSchema', () => {
     expect(parsed.import.status).toBe('created')
     expect(parsed.import.columns).toEqual([])
     expect(parsed.mapping.isComplete).toBe(false)
+    expect(parsed.import.progress).toBeNull()
+    expect(parsed.import.failure).toBeNull()
   })
 
   it('accepts a valid uploaded-session context', () => {
@@ -23,6 +28,50 @@ describe('importContextSchema', () => {
     expect(parsed.import.dataRowCount).toBe(128)
     expect(parsed.import.columns).toHaveLength(3)
     expect(parsed.mapping.revision).toBe(1)
+  })
+
+  it('accepts queued, ready, and processing_failed sessions', () => {
+    expect(importContextSchema.safeParse(queuedContext).success).toBe(true)
+    expect(importContextSchema.safeParse(readyContext).success).toBe(true)
+    expect(importContextSchema.safeParse(processingFailedContext).success).toBe(
+      true,
+    )
+  })
+
+  it('rejects processing_failed without failure', () => {
+    const result = importContextSchema.safeParse({
+      ...processingFailedContext,
+      import: {
+        ...processingFailedContext.import,
+        failure: null,
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects ready with a non-null failure', () => {
+    const result = importContextSchema.safeParse({
+      ...readyContext,
+      import: {
+        ...readyContext.import,
+        failure: {
+          code: 'IMPORT.PROCESSING_FAILED',
+          message: 'should not appear',
+        },
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects queued without progress', () => {
+    const result = importContextSchema.safeParse({
+      ...queuedContext,
+      import: {
+        ...queuedContext.import,
+        progress: null,
+      },
+    })
+    expect(result.success).toBe(false)
   })
 
   it('accepts consistent relational ids', () => {
