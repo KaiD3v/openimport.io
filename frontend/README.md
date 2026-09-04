@@ -1,75 +1,69 @@
-# React + TypeScript + Vite
+# OpenImport frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interface embarcada do OpenImport: token temporário por `postMessage`, contexto da sessão, upload CSV, mapping manual e preview normalizado (`pt-BR-v1`). A confirmação definitiva ainda não existe no backend.
 
-Currently, two official plugins are available:
+## Identidade visual
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Ficha operacional de recebimento — papel frio de armazém, trilho Upload → Mapear → Revisar, células de associação. Tipografia IBM Plex Sans e IBM Plex Mono. Sem dashboard, sidebar, glassmorphism ou API key no navegador.
 
-## React Compiler
+## Desenvolvimento
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Rota da importação: `/imports/:importId`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Harness de desenvolvimento: `/dev` (ausente do build de produção). Token só em memória, nunca na query string.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+QA visual sem token: seção **Pré-visualização visual** ou `/dev?fixture=<id>` (`created`, `uploaded-incomplete`, `uploaded-complete`, `upload-failed`, `long-labels`).
 
+## Fluxo suportado
+
+1. Host emite `oi_import_` fora do navegador e inicializa o iframe.
+2. `GET /imports/:importId/context`
+3. Em `created`: `POST /imports/:importId/file` (campo `file`)
+4. Em `uploaded`: mapping por `columnPosition` + `fieldKey`, `PUT` com `expectedRevision`
+5. Com mapping completo: `POST /imports/:importId/preview` (limite padrão 20)
+6. Preview é dry run — sem confirmação nem processamento definitivo
+
+`upload_failed` permanece terminal.
+
+## Variáveis
+
+| Variável | Uso |
+| --- | --- |
+| `VITE_OPENIMPORT_API_BASE_URL` | Base HTTP, em geral `http://localhost:3000/api/v1` |
+| `VITE_OPENIMPORT_PARENT_ORIGINS` | Origens explícitas do host (sem wildcard) |
+
+## Protocolo embed
+
+```json
+{
+  "type": "openimport.initialize",
+  "version": 1,
+  "importId": "<uuid>",
+  "accessToken": "oi_import_<64 hex minúsculos>"
+}
 ```
+
+Respostas ao parent (origem explícita, nunca `*`): `openimport.ready`, `openimport.loaded`, `openimport.error`.
+
+## Scripts
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run test:watch
+npm run build
+npm run qa:visual   # fixtures em 360/768/1440 (Chrome local)
+npm run qa:e2e      # walkthrough real com backend + /dev
+```
+
+`qa:e2e` exige opt-in (`OPENIMPORT_E2E_ALLOW_PERSIST=1`) porque cria template/sessão/objeto persistentes sem cleanup. Lê `SEED_API_KEY` de `backend/.env` fora do navegador e não imprime o token.
+## Backend local
+
+API em `http://localhost:3000/api/v1`, CORS para `http://localhost:5173`. Ver `backend/docs/frontend-integration.md`.
