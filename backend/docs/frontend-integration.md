@@ -11,15 +11,17 @@ Para o frontend, o backend da organização emite um token de importação (`oi_
 1. Crie ou recupere externamente um `templateId` (API key, no servidor). Só existem `POST /templates` e `GET /templates/:templateId`; não há listagem.
 2. Crie a sessão em `POST /imports`, com API key de organização e `Idempotency-Key` estável por tentativa lógica. Repetir mesma chave e payload retorna a mesma sessão; chave reutilizada com outro template retorna conflito.
 3. Emita `POST /imports/:importId/access-tokens` com a API key. A resposta `201` traz `accessToken`, `tokenType: "Bearer"`, `importId` e `expiresAt`, com `Cache-Control: no-store`.
-4. Com o token, o navegador pode: `GET /imports/:importId`, `GET /imports/:importId/context`, `POST /imports/:importId/file`, `GET`/`PUT /imports/:importId/mapping` e `POST /imports/:importId/preview`.
+4. Com o token, o navegador pode: `GET /imports/:importId`, `GET /imports/:importId/context`, `POST /imports/:importId/file`, `GET`/`PUT /imports/:importId/mapping`, `POST /imports/:importId/preview`, `POST /imports/:importId/confirm` e `GET /imports/:importId/rejected-rows`.
 5. Envie um único `file` em `POST /imports/:importId/file`. Após sucesso, não reenvie. Em `upload_failed`, a sessão não é recuperável para upload: crie outra sessão (com a API key).
 6. Consulte sessão, `GET /imports/:importId/context` ou `GET /imports/:importId/mapping` para obter colunas, template e revisão.
 7. Salve todo o mapping com `PUT /imports/:importId/mapping` e `expectedRevision` atual. Associe posição de coluna a field, nunca texto do header.
 8. Quando `isComplete`, execute `POST /imports/:importId/preview` com `expectedMappingRevision` da resposta de mapping.
+9. Confirme com `POST /imports/:importId/confirm` (`expectedMappingRevision` + `expectedContentSha256`). A resposta `202` deixa a sessão em `queued`; faça poll em `GET /imports/:importId` até `ready` ou `processing_failed`. Após confirmação, mapping não pode mais ser alterado.
+10. Com `ready`, consulte `GET /imports/:importId/rejected-rows` (cursor). Entrega de válidos ao cliente ainda não existe nesta fatia.
 
 O token vale só para o `importId` vinculado. Outra sessão da mesma organização responde `404 IMPORT.NOT_FOUND`. Criar sessão, emitir outro token ou acessar templates com o token responde `403 AUTH.INSUFFICIENT_SCOPE`. Token expirado, revogado, desconhecido ou cuja API key emissora esteja revogada responde `401 AUTH.INVALID_IMPORT_TOKEN` sem detalhar o motivo.
 
-Não há endpoints de listagem/histórico, progresso, cancelamento, confirmação nem aplicação definitiva. O fluxo atual termina em preview. Não há endpoint público de revogação; `revokedAt` é considerado na validação.
+Não há endpoints de listagem/histórico, cancelamento nem webhook. Não há endpoint público de revogação; `revokedAt` é considerado na validação.
 
 ## Recomendações para a interface
 
@@ -28,7 +30,7 @@ Não há endpoints de listagem/histórico, progresso, cancelamento, confirmaçã
 - Após qualquer mapping que altere revisão, invalide o preview mostrado. Um preview é associado ao `mappingRevision` e `contentSha256` retornados.
 - Trate `200` de preview como transporte bem-sucedido, não como todas as linhas válidas. Use `summary`, `rows[].valid` e `rows[].errors`; `data:null` é esperado na linha inválida.
 - Mostre aviso se `sampleTruncated` for `true`: a amostra é prefixo e pode estar vazia pelo orçamento, enquanto `summary` ainda cobre tudo.
-- Não cacheie preview (`Cache-Control: no-store`). Não indique processamento ou confirmação assíncrona: não existem.
+- Não cacheie preview/confirm (`Cache-Control: no-store`). Após confirm, mostre progresso a partir de `progress` sem inventar percentual se `totalRows` for null. Em `processing_failed`, use `failure.code` / `failure.message` (`null` quando não houver falha — campo sempre presente).
 - Diferencie `400/401/403/404/409/413/422/503` de erro por linha. Exiba `code` e `traceId` para suporte, sem registrar CSV, API key ou token de importação.
 
 ## Autenticação no navegador

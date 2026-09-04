@@ -68,7 +68,7 @@ Somente API key. Headers: Bearer, `Content-Type: application/json`, `Idempotency
 Retorna `201` com:
 
 ```json
-{"id":"<importId>","templateId":"<templateId>","status":"created","originalFilename":null,"byteSize":null,"contentSha256":null,"encoding":null,"delimiter":null,"dataRowCount":null,"columns":[],"uploadedAt":null,"createdAt":"<iso>","updatedAt":"<iso>"}
+{"id":"<importId>","templateId":"<templateId>","status":"created","originalFilename":null,"byteSize":null,"contentSha256":null,"encoding":null,"delimiter":null,"dataRowCount":null,"columns":[],"progress":null,"executionId":null,"uploadedAt":null,"confirmedAt":null,"createdAt":"<iso>","updatedAt":"<iso>"}
 ```
 
 Repetir mesma chave e mesmo template retorna a mesma sessão (`201`); mesma chave com template diferente retorna `409 IDEMPOTENCY.KEY_REUSED`. Outros erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 TEMPLATE.NOT_FOUND`.
@@ -81,7 +81,7 @@ Erros: `400 VALIDATION.FAILED` (multipart), `401`, `403 AUTH.INSUFFICIENT_SCOPE`
 
 ### `GET /imports/:importId`
 
-Retorna `200` com a sessão, incluindo campos nullable de metadata; antes do upload eles são `null` e `columns` é `[]`. Aceita API key ou token da sessão. Erros: `400`, `401`, `403`, `404 IMPORT.NOT_FOUND`.
+Retorna `200` com a sessão, incluindo campos nullable de metadata; antes do upload eles são `null` e `columns` é `[]`. Após confirmação, inclui `progress` (`processedRows`, `totalRows` nullable, `validRows`, `invalidRows`), `executionId`, `confirmedAt` e `failure` (`null` salvo em `processing_failed`, quando é `{code,message}` público sanitizado). Não invente percentual quando `totalRows` for `null`. Aceita API key ou token da sessão. Erros: `400`, `401`, `403`, `404 IMPORT.NOT_FOUND`.
 
 ## Mapping
 
@@ -123,7 +123,41 @@ Bearer + JSON:
 
 `summary` cobre o arquivo inteiro. `rows` é apenas prefixo, com teto de 1 MiB de JSON; `sampleTruncated` pode ser `true` com amostra vazia se o primeiro item exceder o orçamento. `recordNumber` começa em 1 no primeiro registro lógico de dados, não em uma linha física quando há campo multilinha.
 
-Conflitos: `IMPORT.PREVIEW_NOT_ALLOWED`, `IMPORT.MAPPING_INCOMPLETE`, `IMPORT.MAPPING_REVISION_CONFLICT` e `IMPORT.FILE_CHANGED` (409). Limite lido no preview: `413`; CSV inválido: `422`; storage/stream indisponível: `503 IMPORT.PREVIEW_UNAVAILABLE`. O preview não persiste dados nem muda status ou revisão.
+Conflitos: `IMPORT.PREVIEW_NOT_ALLOWED`, `IMPORT.MAPPING_INCOMPLETE`, `IMPORT.MAPPING_REVISION_CONFLICT` e `IMPORT.FILE_CHANGED` (409). Limite lido no preview: `413`; CSV inválido: `422`; storage/stream indisponível: `503 IMPORT.PREVIEW_UNAVAILABLE`. O preview não persiste dados nem muda status ou revisão. Após confirmação (`queued`+), preview fica bloqueado.
+
+## Confirmação e processamento
+
+### `POST /imports/:importId/confirm`
+
+API key ou token da sessão. Corpo estrito:
+
+```json
+{"expectedMappingRevision":1,"expectedContentSha256":"<64 hex minúsculos>"}
+```
+
+Retorna `202` rapidamente (não processa o CSV na requisição):
+
+```json
+{"importId":"<uuid>","executionId":"<uuid>","status":"queued","expectedMappingRevision":1,"expectedContentSha256":"<sha>","progress":{"processedRows":0,"totalRows":2,"validRows":0,"invalidRows":0},"failure":null,"replayed":false}
+```
+
+Exige sessão `uploaded`, mapping completo, revisão e hash iguais ao snapshot. Cria uma `ImportExecution`, enfileira BullMQ com `jobId` determinístico e congela mapping/arquivo. Replay com o mesmo snapshot devolve a mesma execução (`replayed: true`) sem segundo job. Snapshot diferente após confirmação: `409 IMPORT.MAPPING_REVISION_CONFLICT` ou `IMPORT.FILE_CHANGED`. Outros: `409 IMPORT.CONFIRMATION_NOT_ALLOWED` / `IMPORT.MAPPING_INCOMPLETE`, `503 IMPORT.PROCESSING_UNAVAILABLE`.
+
+O worker (mesmo processo em desenvolvimento) relê o objeto, recalcula SHA-256, reutiliza parser/normalizadores, persiste válidos/inválidos em batches e marca `ready` só após persistência consistente; falha definitiva → `processing_failed` (não reutiliza `upload_failed`), com remoção atômica de qualquer `ImportRecord` parcial. Retries limitados cobrem falhas transitórias de infra; mapping inválido, hash divergente e CSV estrutural são `UnrecoverableError`. Um reconciliador periódico no mesmo processo republica jobs determinísticos ausentes para execuções `queued`/`processing` sem criar nova execução. `failure` público aparece em GET sessão/contexto e no replay de confirm quando `processing_failed`.
+
+### `GET /imports/:importId/rejected-rows`
+
+Cursor pagination das linhas inválidas do snapshot `ready`:
+
+```http
+GET /imports/:importId/rejected-rows?limit=50&after=<cursor>
+```
+
+```json
+{"data":[{"recordNumber":2,"errors":[{"fieldKey":"priceInCents","code":"FIELD.INVALID_CURRENCY","message":"..."}]}],"nextCursor":null}
+```
+
+Sem payload normalizado e sem CSV bruto. `limit` máximo = `IMPORT_REJECTED_ROWS_MAX_LIMIT` (padrão 50, teto 200). Antes de `ready`: `409 IMPORT.SNAPSHOT_NOT_READY`.
 
 ## Walkthrough reproduzível
 
@@ -139,6 +173,10 @@ $mapping = Invoke-RestMethod "$api/imports/$($session.id)/mapping" -Headers $h
 $body = @{ expectedRevision = $mapping.revision; mappings = @(@{columnPosition=0;fieldKey='sku'},@{columnPosition=1;fieldKey='stock'},@{columnPosition=2;fieldKey='priceInCents'}) } | ConvertTo-Json -Depth 3
 $saved = Invoke-RestMethod "$api/imports/$($session.id)/mapping" -Method Put -Headers $h -ContentType 'application/json' -Body $body
 Invoke-RestMethod "$api/imports/$($session.id)/preview" -Method Post -Headers $h -ContentType 'application/json' -Body (@{ expectedMappingRevision=$saved.revision; limit=20 } | ConvertTo-Json)
+$session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h
+$confirm = Invoke-RestMethod "$api/imports/$($session.id)/confirm" -Method Post -Headers $h -ContentType 'application/json' -Body (@{ expectedMappingRevision=$saved.revision; expectedContentSha256=$session.contentSha256 } | ConvertTo-Json)
+do { Start-Sleep -Milliseconds 200; $session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h } while ($session.status -in @('queued','processing'))
+Invoke-RestMethod "$api/imports/$($session.id)/rejected-rows?limit=50" -Headers $h
 ```
 
 Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de ambiente. O CSV inválido retorna 200 no preview, com 1 linha válida normalizada para centavos e linhas inválidas detalhadas; veja [fixtures](csv-and-normalization.md#fixtures-documentais).

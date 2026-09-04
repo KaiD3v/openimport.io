@@ -16,14 +16,14 @@ CSV pode conter dados pessoais. Use fixtures sintéticas, limite acesso a logs e
 
 ## Saúde e dependências
 
-`/health` é liveness. `/health/ready` executa ping no PostgreSQL e responde 503 quando o banco não está pronto. Readiness não verifica MinIO/S3; falhas desse serviço aparecem nas operações de upload/preview.
+`/health` é liveness. `/health/ready` executa ping no PostgreSQL e responde 503 quando o banco não está pronto. Readiness não verifica MinIO/S3 nem Redis; falhas desses serviços aparecem nas operações de upload/preview/confirm.
 
 As credenciais do `docker-compose.yml` são fracas e exclusivamente locais. Elas não são referência de produção.
 
-## Storage e ciclo de vida
+## Storage, fila e ciclo de vida
 
-CSV é salvo fora do PostgreSQL em storage S3 compatível; banco guarda metadata e chave interna, nunca exposta pela API. Em falha de parse após storage, o backend tenta apagar o objeto e marca a sessão como `upload_failed`. Não há retenção automática, job agendado, expiração ou limpeza de objetos/sessões aceitos.
+CSV é salvo fora do PostgreSQL em storage S3 compatível; banco guarda metadata e chave interna, nunca exposta pela API. Em falha de parse após storage, o backend tenta apagar o objeto e marca a sessão como `upload_failed`. Confirmação enfileira processamento em Redis/BullMQ; retries são limitados (`IMPORT_WORKER_MAX_ATTEMPTS` + backoff). Execuções falhas não retêm `ImportRecord`. Payload normalizado e CSV não entram em logs. Um reconciliador no mesmo processo republica jobs órfãos ou divergentes (BullMQ `failed`/`completed` com execução ainda não terminal), sem criar novas execuções (`IMPORT_JOB_RECONCILE_INTERVAL_MS`, paginação por cursor). Não há retenção automática, job agendado, expiração ou limpeza de objetos/sessões aceitos. DLQ completa fica para uma fatia futura.
 
 ## Riscos para exposição pública
 
-Antes de publicar, faltam ao menos modelo de usuário, gestão segura de chaves, rate limiting, retenção/eliminação, monitoração de storage na readiness, estratégia de backup, proteção de dados e contrato de confirmação. O token de importação reduz o risco de expor a API key no navegador, mas não substitui hardening público completo. Não há webhooks assinados implementados.
+Antes de publicar, faltam ao menos modelo de usuário, gestão segura de chaves, rate limiting, retenção/eliminação, monitoração de storage/Redis na readiness, estratégia de backup e proteção de dados. O token de importação reduz o risco de expor a API key no navegador, mas não substitui hardening público completo. Não há webhooks assinados implementados.

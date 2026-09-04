@@ -4,8 +4,8 @@
 
 - Node.js 24 (documentado; o manifesto não impõe `engines`).
 - npm e Docker Compose.
-- PostgreSQL 17 (`postgres:17-alpine`) e MinIO compatível com S3, fornecidos pelo Compose da raiz.
-- O backend é ESM, NestJS 12, Prisma 7, TypeScript 6 e Vitest 4 (versões no `package.json`).
+- PostgreSQL 17 (`postgres:17-alpine`), MinIO compatível com S3 e Redis 7.4 (`redis:7.4.2-alpine`), fornecidos pelo Compose da raiz.
+- O backend é ESM, NestJS 12, Prisma 7, TypeScript 6, Vitest 4, BullMQ (versões no `package.json`).
 
 Não há Dockerfile, CI, `.nvmrc` ou `.node-version` versionados.
 

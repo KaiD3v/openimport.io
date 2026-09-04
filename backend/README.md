@@ -1,6 +1,6 @@
 # OpenImport backend
 
-API NestJS multi-tenant para templates, sessões de importação CSV, mapping manual e preview síncrono. A organização vem da API key:
+API NestJS multi-tenant para templates, sessões de importação CSV, mapping manual, preview síncrono e confirmação assíncrona com snapshot persistido. A organização vem da API key:
 
 ```http
 Authorization: Bearer <api-key>
@@ -16,7 +16,7 @@ Requer Node.js 24, npm e Docker. Na raiz do repositório:
 docker compose up -d
 ```
 
-Em `backend/`, copie `.env.example` para `.env`, gere uma chave `SEED_API_KEY` (`oi_live_` + 64 caracteres hexadecimais minúsculos) e execute:
+Sobe PostgreSQL, MinIO e Redis (BullMQ). Em `backend/`, copie `.env.example` para `.env`, gere uma chave `SEED_API_KEY` (`oi_live_` + 64 caracteres hexadecimais minúsculos) e execute:
 
 ```bash
 npm install
@@ -41,12 +41,14 @@ URLs locais:
 2. Criar sessão com `Idempotency-Key`.
 3. Enviar CSV em `file`.
 4. Consultar e salvar mapping com revisão otimista.
-5. Executar preview `pt-BR-v1`.
+5. Executar preview `pt-BR-v1` (dry-run).
+6. Confirmar com revisão + SHA-256 → `queued` (worker + reconciliador no mesmo processo Nest em desenvolvimento).
+7. Aguardar worker até `ready` (ou `processing_failed` com `failure` público) e consultar `rejected-rows` quando ready.
 
-Preview é dry-run: não confirma importação nem persiste linhas normalizadas. Não há filas, progresso, confirmação, listagem/histórico, XLSX nem autenticação de usuário para navegador.
+Não há entrega em lote ao cliente, webhook `import.ready`, listagem/histórico, cancelamento, XLSX nem autenticação de usuário para navegador.
 
 ## Comandos
 
-Em `backend/`: `npm test` (unitários), `npm run test:e2e` (Postgres/MinIO), `npm run lint`, `npm run typecheck` e `npm run build`. Execute typecheck e build sequencialmente, pois ambos geram Prisma.
+Em `backend/`: `npm test` (unitários), `npm run test:e2e` (Postgres/MinIO/Redis), `npm run lint`, `npm run typecheck` e `npm run build`. Execute typecheck e build sequencialmente, pois ambos geram Prisma.
 
 Consulte [Ambiente local](docs/getting-started.md), [Referência HTTP](docs/api-reference.md) e [Integração frontend](docs/frontend-integration.md) para instruções e contratos completos.
