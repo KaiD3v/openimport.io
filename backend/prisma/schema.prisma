@@ -18,9 +18,29 @@ enum TemplateFieldType {
 enum ImportSessionStatus {
   created
   uploaded
+  queued
+  processing
+  ready
+  processing_failed
   upload_failed
 
   @@map("import_session_status")
+}
+
+enum ImportExecutionStatus {
+  queued
+  processing
+  ready
+  failed
+
+  @@map("import_execution_status")
+}
+
+enum ImportRecordClassification {
+  valid
+  invalid
+
+  @@map("import_record_classification")
 }
 
 model Organization {
@@ -33,6 +53,8 @@ model Organization {
   templates          ImportTemplate[]
   importSessions     ImportSession[]
   importAccessTokens ImportAccessToken[]
+  importExecutions   ImportExecution[]
+  importRecords      ImportRecord[]
 
   @@map("organizations")
 }
@@ -102,6 +124,7 @@ model ImportSession {
   mapping             Json                @default("[]") @db.JsonB
   mappingRevision     Int                 @default(0) @map("mapping_revision")
   uploadedAt          DateTime?           @map("uploaded_at") @db.Timestamptz(6)
+  confirmedAt         DateTime?           @map("confirmed_at") @db.Timestamptz(6)
   createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -109,12 +132,67 @@ model ImportSession {
   template     ImportTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
   columns      ImportColumn[]
   accessTokens ImportAccessToken[]
+  executions   ImportExecution[]
+  records      ImportRecord[]
 
   @@unique([organizationId, idempotencyKeyHash], map: "uq_import_sessions_org_idempotency_key_hash")
   @@index([organizationId], map: "idx_import_sessions_organization_id")
   @@index([organizationId, templateId], map: "idx_import_sessions_organization_id_template_id")
   @@index([organizationId, id], map: "idx_import_sessions_organization_id_id")
   @@map("import_sessions")
+}
+
+model ImportExecution {
+  id                       String                @id @default(uuid(7)) @db.Uuid
+  organizationId           String                @map("organization_id") @db.Uuid
+  importSessionId          String                @map("import_session_id") @db.Uuid
+  status                   ImportExecutionStatus @default(queued)
+  confirmationFingerprint  String                @map("confirmation_fingerprint") @db.VarChar(64)
+  expectedMappingRevision  Int                   @map("expected_mapping_revision")
+  expectedContentSha256    String                @map("expected_content_sha256") @db.VarChar(64)
+  jobId                    String                @unique(map: "uq_import_executions_job_id") @map("job_id") @db.VarChar(160)
+  attempt                  Int                   @default(0)
+  processedRows            Int                   @default(0) @map("processed_rows")
+  totalRows                Int?                  @map("total_rows")
+  validRows                Int                   @default(0) @map("valid_rows")
+  invalidRows              Int                   @default(0) @map("invalid_rows")
+  errorCode                String?               @map("error_code") @db.VarChar(80)
+  errorMessage             String?               @map("error_message") @db.VarChar(500)
+  startedAt                DateTime?             @map("started_at") @db.Timestamptz(6)
+  finishedAt               DateTime?             @map("finished_at") @db.Timestamptz(6)
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession  @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  records       ImportRecord[]
+
+  @@unique([importSessionId, confirmationFingerprint], map: "uq_import_executions_session_fingerprint")
+  @@index([organizationId, importSessionId], map: "idx_import_executions_org_session")
+  @@index([organizationId, id], map: "idx_import_executions_org_id")
+  @@map("import_executions")
+}
+
+model ImportRecord {
+  id              String                     @id @default(uuid(7)) @db.Uuid
+  organizationId  String                     @map("organization_id") @db.Uuid
+  importSessionId String                     @map("import_session_id") @db.Uuid
+  executionId     String                     @map("execution_id") @db.Uuid
+  recordNumber    Int                        @map("record_number")
+  classification  ImportRecordClassification
+  payload         Json?                      @db.JsonB
+  errors          Json?                      @db.JsonB
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession  @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  execution     ImportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, recordNumber], map: "uq_import_records_execution_record_number")
+  @@index([organizationId, importSessionId, classification, recordNumber], map: "idx_import_records_org_session_class_record")
+  @@index([organizationId, executionId], map: "idx_import_records_org_execution")
+  @@map("import_records")
 }
 
 model ImportColumn {
