@@ -123,6 +123,47 @@ export const envSchema = z
       .positive()
       .max(200)
       .default(25),
+    WEBHOOK_SECRET_ENCRYPTION_KEY: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/, {
+        message: 'must be 64 lowercase hexadecimal characters',
+      }),
+    WEBHOOK_WORKER_CONCURRENCY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(32)
+      .default(4),
+    WEBHOOK_WORKER_MAX_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(20)
+      .default(5),
+    WEBHOOK_WORKER_BACKOFF_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2_000),
+    WEBHOOK_DELIVERY_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(30_000)
+      .default(5_000),
+    WEBHOOK_JOB_RECONCILE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3_600_000)
+      .default(15_000),
+    WEBHOOK_JOB_RECONCILE_BATCH_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .default(25),
+    WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS: envBool,
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.ALLOWED_ORIGINS.includes('*')) {
@@ -130,6 +171,13 @@ export const envSchema = z
         code: 'custom',
         path: ['ALLOWED_ORIGINS'],
         message: 'wildcard origin is not allowed in production',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS'],
+        message: 'private webhook targets are not allowed in production',
       });
     }
   });

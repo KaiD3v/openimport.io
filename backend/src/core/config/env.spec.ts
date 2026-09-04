@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadEnv } from './env.js';
 
-const REQUIRED = {
+  const REQUIRED = {
   NODE_ENV: 'test',
   PORT: '3000',
   DATABASE_URL: 'postgresql://openimport:openimport@localhost:5432/openimport',
@@ -11,6 +11,8 @@ const REQUIRED = {
   S3_SECRET_ACCESS_KEY: 'openimportsecret',
   S3_BUCKET: 'openimport',
   REDIS_URL: 'redis://localhost:6379',
+  WEBHOOK_SECRET_ENCRYPTION_KEY:
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 };
 
 describe('loadEnv', () => {
@@ -87,5 +89,28 @@ describe('loadEnv', () => {
     });
 
     expect(() => loadEnv()).toThrow(/ALLOWED_ORIGINS/);
+  });
+
+  it('rejects private webhook targets in production', () => {
+    Object.assign(process.env, REQUIRED, {
+      NODE_ENV: 'production',
+      WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS: 'true',
+    });
+
+    expect(() => loadEnv()).toThrow(/WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS/);
+  });
+
+  it('rejects a malformed webhook encryption key without echoing it', () => {
+    Object.assign(process.env, REQUIRED, {
+      WEBHOOK_SECRET_ENCRYPTION_KEY: 'supersecret-not-hex',
+    });
+
+    expect(() => loadEnv()).toThrow(/WEBHOOK_SECRET_ENCRYPTION_KEY/);
+    try {
+      loadEnv();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message).not.toContain('supersecret-not-hex');
+    }
   });
 });
