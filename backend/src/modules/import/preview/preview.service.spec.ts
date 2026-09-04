@@ -70,6 +70,9 @@ function uploadedSession(
     delimiter: ',',
     dataRowCount: 2,
     storageObjectKey: `org/${organizationId}/imports/${importId}.csv`,
+    storageDeletedAt: null,
+    storageCleanupClaimedAt: null,
+    storageCleanupClaimToken: null,
     mapping: [
       { columnPosition: 0, fieldKey: 'sku' },
       { columnPosition: 2, fieldKey: 'priceInCents' },

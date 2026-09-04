@@ -52,6 +52,9 @@ function session(csv: Buffer, dataRowCount: number): ImportSessionRecord {
     delimiter: ',',
     dataRowCount,
     storageObjectKey: `org/${organizationId}/imports/${importId}.csv`,
+    storageDeletedAt: null,
+    storageCleanupClaimedAt: null,
+    storageCleanupClaimToken: null,
     mapping: [
       { columnPosition: 0, fieldKey: 'sku' },
       { columnPosition: 2, fieldKey: 'priceInCents' },
