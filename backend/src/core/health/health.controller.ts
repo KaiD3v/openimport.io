@@ -1,14 +1,14 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/public.decorator.js';
-import { PrismaService } from '../database/prisma.service.js';
 import { ApiErrorResponseDto } from '../../common/dto/api-error-response.dto.js';
+import { failedDependenciesMessage, ReadinessService } from './readiness.service.js';
 
 @ApiTags('health')
 @Public()
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly readinessService: ReadinessService) {}
 
   @Get()
   @ApiOperation({ summary: 'Liveness probe' })
@@ -18,15 +18,18 @@ export class HealthController {
   }
 
   @Get('ready')
-  @ApiOperation({ summary: 'Readiness probe including database connectivity' })
+  @ApiOperation({
+    summary:
+      'Readiness probe for PostgreSQL, Redis, and object storage availability',
+  })
   @ApiResponse({ status: 200, description: 'Application can serve traffic' })
   @ApiResponse({ status: 503, type: ApiErrorResponseDto })
   async readiness(): Promise<{ status: 'ok' }> {
-    const ready = await this.prisma.isReady();
-    if (!ready) {
+    const result = await this.readinessService.check();
+    if (!result.ready) {
       throw new ServiceUnavailableException({
         code: 'HEALTH.NOT_READY',
-        message: 'Database is unavailable.',
+        message: failedDependenciesMessage(result.failed),
       });
     }
     return { status: 'ok' };
