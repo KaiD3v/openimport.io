@@ -99,6 +99,12 @@ export const envSchema = z
       .positive()
       .max(200)
       .default(50),
+    IMPORT_VALID_ROWS_MAX_LIMIT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100)
+      .default(100),
     IMPORT_JOB_RECONCILE_INTERVAL_MS: z.coerce
       .number()
       .int()
