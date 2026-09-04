@@ -92,3 +92,64 @@ describe('S3ObjectStorage bucket bootstrap', () => {
     ).toBe(false);
   });
 });
+
+describe('S3ObjectStorage checkReady', () => {
+  it('uses HeadBucket only and never creates a bucket', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const storage = new S3ObjectStorage(envFixture({ NODE_ENV: 'development' }), {
+      send,
+    });
+
+    await storage.checkReady();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toBeInstanceOf(HeadBucketCommand);
+    expect(send.mock.calls[0]?.[1]).toEqual({ abortSignal: undefined });
+    expect(
+      send.mock.calls.some((call) => call[0] instanceof CreateBucketCommand),
+    ).toBe(false);
+  });
+
+  it('forwards AbortSignal to HeadBucket send options', async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const storage = new S3ObjectStorage(envFixture(), { send });
+    const controller = new AbortController();
+
+    await storage.checkReady({ signal: controller.signal });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.any(HeadBucketCommand),
+      { abortSignal: controller.signal },
+    );
+  });
+
+  it('does not call CreateBucket when HeadBucket is aborted', async () => {
+    const send = vi.fn().mockRejectedValue(
+      Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }),
+    );
+    const storage = new S3ObjectStorage(envFixture({ NODE_ENV: 'development' }), {
+      send,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(storage.checkReady({ signal: controller.signal })).rejects.toThrow(
+      'aborted',
+    );
+    expect(
+      send.mock.calls.some((call) => call[0] instanceof CreateBucketCommand),
+    ).toBe(false);
+  });
+
+  it('does not cache failures between checkReady calls', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({});
+    const storage = new S3ObjectStorage(envFixture(), { send });
+
+    await expect(storage.checkReady()).rejects.toThrow('timeout');
+    await expect(storage.checkReady()).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});

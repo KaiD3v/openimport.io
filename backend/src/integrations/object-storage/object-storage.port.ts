@@ -14,4 +14,6 @@ export interface ObjectStorage {
   ): Promise<void>;
   openObject(key: string): Promise<Readable>;
   deleteObject(key: string): Promise<void>;
+  /** Non-mutating readiness probe (HeadBucket only). */
+  checkReady(options?: { signal?: AbortSignal }): Promise<void>;
 }

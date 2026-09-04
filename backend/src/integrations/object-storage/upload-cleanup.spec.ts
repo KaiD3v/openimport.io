@@ -10,13 +10,23 @@ function streamOf(text: string): Readable {
   return Readable.from([Buffer.from(text, 'utf8')]);
 }
 
+function storageMock(
+  overrides: Partial<ObjectStorage>,
+): ObjectStorage {
+  return {
+    putObject: vi.fn(),
+    openObject: vi.fn(),
+    deleteObject: vi.fn(),
+    checkReady: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe('persistUploadWithCleanup', () => {
   it('propagates storage put failures without marking success', async () => {
-    const storage: ObjectStorage = {
+    const storage = storageMock({
       putObject: vi.fn().mockRejectedValue(new Error('put failed')),
-      openObject: vi.fn(),
-      deleteObject: vi.fn(),
-    };
+    });
 
     await expect(
       persistUploadWithCleanup({
@@ -32,11 +42,11 @@ describe('persistUploadWithCleanup', () => {
   });
 
   it('deletes the object when post-store work fails', async () => {
-    const storage: ObjectStorage = {
+    const storage = storageMock({
       putObject: vi.fn().mockResolvedValue(undefined),
       openObject: vi.fn().mockResolvedValue(streamOf('sku,name\n1,2\n')),
       deleteObject: vi.fn().mockResolvedValue(undefined),
-    };
+    });
 
     await expect(
       persistUploadWithCleanup({
@@ -53,11 +63,11 @@ describe('persistUploadWithCleanup', () => {
   });
 
   it('deletes the object when database persistence fails after upload', async () => {
-    const storage: ObjectStorage = {
+    const storage = storageMock({
       putObject: vi.fn().mockResolvedValue(undefined),
       openObject: vi.fn().mockResolvedValue(streamOf('sku,name\n1,2\n')),
       deleteObject: vi.fn().mockResolvedValue(undefined),
-    };
+    });
 
     await expect(
       persistUploadWithCleanup({
@@ -74,11 +84,11 @@ describe('persistUploadWithCleanup', () => {
   });
 
   it('surfaces cleanup failure without hiding the original error', async () => {
-    const storage: ObjectStorage = {
+    const storage = storageMock({
       putObject: vi.fn().mockResolvedValue(undefined),
       openObject: vi.fn().mockResolvedValue(streamOf('sku,name\n1,2\n')),
       deleteObject: vi.fn().mockRejectedValue(new Error('cleanup failed')),
-    };
+    });
     const logger = { error: vi.fn() };
 
     await expect(
@@ -116,11 +126,11 @@ describe('persistUploadWithCleanup', () => {
   });
 
   it('propagates openObject failures after a successful put and cleans up', async () => {
-    const storage: ObjectStorage = {
+    const storage = storageMock({
       putObject: vi.fn().mockResolvedValue(undefined),
       openObject: vi.fn().mockRejectedValue(new Error('open failed')),
       deleteObject: vi.fn().mockResolvedValue(undefined),
-    };
+    });
 
     await expect(
       persistUploadWithCleanup({

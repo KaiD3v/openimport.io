@@ -15,7 +15,10 @@ import type {
 } from './object-storage.port.js';
 
 export type S3CommandSender = {
-  send: (command: unknown) => Promise<unknown>;
+  send: (
+    command: unknown,
+    options?: { abortSignal?: AbortSignal },
+  ) => Promise<unknown>;
 };
 
 export function isMissingBucketError(error: unknown): boolean {
@@ -119,6 +122,12 @@ export class S3ObjectStorage implements ObjectStorage {
         Key: key,
       }),
     );
+  }
+
+  async checkReady(options?: { signal?: AbortSignal }): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }), {
+      abortSignal: options?.signal,
+    });
   }
 
   ensureReady(): Promise<void> {
