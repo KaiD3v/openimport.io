@@ -131,13 +131,16 @@ model ImportSession {
   encoding            String?             @db.VarChar(32)
   delimiter           String?             @db.VarChar(8)
   dataRowCount        Int?                @map("data_row_count")
-  storageObjectKey    String?             @map("storage_object_key") @db.VarChar(512)
-  mapping             Json                @default("[]") @db.JsonB
-  mappingRevision     Int                 @default(0) @map("mapping_revision")
-  uploadedAt          DateTime?           @map("uploaded_at") @db.Timestamptz(6)
-  confirmedAt         DateTime?           @map("confirmed_at") @db.Timestamptz(6)
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  storageObjectKey         String?   @map("storage_object_key") @db.VarChar(512)
+  storageDeletedAt         DateTime? @map("storage_deleted_at") @db.Timestamptz(6)
+  storageCleanupClaimedAt  DateTime? @map("storage_cleanup_claimed_at") @db.Timestamptz(6)
+  storageCleanupClaimToken String?   @map("storage_cleanup_claim_token") @db.Uuid
+  mapping                  Json      @default("[]") @db.JsonB
+  mappingRevision          Int       @default(0) @map("mapping_revision")
+  uploadedAt               DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  confirmedAt              DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template     ImportTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
@@ -186,6 +189,10 @@ model ImportExecution {
   @@unique([importSessionId, confirmationFingerprint], map: "uq_import_executions_session_fingerprint")
   @@index([organizationId, importSessionId], map: "idx_import_executions_org_session")
   @@index([organizationId, id], map: "idx_import_executions_org_id")
+  // Partial index idx_import_executions_file_retention (finished_at, import_session_id)
+  // WHERE finished_at IS NOT NULL AND status IN (ready, failed) lives only in
+  // prisma/migrations/20260904230000_import_executions_file_retention_index —
+  // Prisma cannot express partial indexes in the schema DSL.
   @@map("import_executions")
 }
 
