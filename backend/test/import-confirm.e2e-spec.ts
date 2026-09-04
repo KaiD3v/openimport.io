@@ -20,6 +20,7 @@ import { ImportRepository } from '../src/modules/import/import.repository.js';
 import { IMPORT_PROCESSING_QUEUE } from '../src/modules/import/processing/import-processing.queue.js';
 import { ImportProcessingReconciler } from '../src/modules/import/processing/import-processing.reconciler.js';
 import { ImportProcessingWorker } from '../src/modules/import/processing/import-processing.worker.js';
+import { ImportFileRetentionCleaner } from '../src/modules/import/storage/import-file-retention.cleaner.js';
 import {
   createTenant,
   productTemplatePayload,
@@ -138,6 +139,16 @@ describe('Import confirmation and processing (e2e)', () => {
         },
       }),
     );
+  }
+
+  async function countObjectsWithPrefix(prefix: string): Promise<number> {
+    const listed = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: env.S3_BUCKET,
+        Prefix: prefix,
+      }),
+    );
+    return (listed.Contents ?? []).length;
   }
 
   async function prepareConfirmableImport(
@@ -1648,5 +1659,94 @@ describe('Import confirmation and processing (e2e)', () => {
         },
       }),
     ).toBe(beforeResults);
+  });
+
+  it('deletes retained CSV after TTL while keeping session snapshot APIs', async () => {
+    const tenant = await trackTenant();
+    const prepared = await prepareConfirmableImport(
+      tenant.apiKey,
+      'file-retention-ready-001',
+    );
+
+    const confirmed = await request(app.getHttpServer())
+      .post(`/api/v1/imports/${prepared.importId}/confirm`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .send({
+        expectedMappingRevision: prepared.revision,
+        expectedContentSha256: prepared.contentSha256,
+      })
+      .expect(202);
+
+    const ready = await waitForReady(tenant.apiKey, prepared.importId);
+    expect(ready.status).toBe('ready');
+
+    const before = await prisma.importSession.findFirst({
+      where: {
+        id: prepared.importId,
+        organizationId: tenant.organizationId,
+      },
+    });
+    expect(before?.storageObjectKey).toEqual(expect.any(String));
+    expect(before?.storageDeletedAt).toBeNull();
+    expect(
+      await countObjectsWithPrefix(`org/${tenant.organizationId}/`),
+    ).toBe(1);
+
+    await prisma.importExecution.updateMany({
+      where: {
+        organizationId: tenant.organizationId,
+        importSessionId: prepared.importId,
+        status: 'ready',
+      },
+      data: {
+        finishedAt: new Date(Date.now() - 200 * 60 * 60 * 1000),
+      },
+    });
+
+    const cleaner = app.get(ImportFileRetentionCleaner);
+    cleaner.resetCursor();
+    await cleaner.cleanupOnce();
+
+    const after = await prisma.importSession.findFirst({
+      where: {
+        id: prepared.importId,
+        organizationId: tenant.organizationId,
+      },
+    });
+    expect(after?.status).toBe('ready');
+    expect(after?.storageObjectKey).toBeNull();
+    expect(after?.storageDeletedAt).toEqual(expect.any(Date));
+    expect(
+      await countObjectsWithPrefix(`org/${tenant.organizationId}/`),
+    ).toBe(0);
+
+    const session = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(session.body.status).toBe('ready');
+    expect(session.body.progress).toMatchObject({
+      validRows: 1,
+      invalidRows: 1,
+    });
+
+    const valid = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/valid-rows?limit=10`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(valid.body.data).toHaveLength(1);
+
+    const rejected = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/rejected-rows?limit=10`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(rejected.body.data).toHaveLength(1);
+
+    const summary = await request(app.getHttpServer())
+      .get(`/api/v1/imports/${prepared.importId}/results/summary`)
+      .set('Authorization', `Bearer ${tenant.apiKey}`)
+      .expect(200);
+    expect(summary.body.executionId).toBe(confirmed.body.executionId);
+    expect(summary.body.totalValid).toBe(1);
   });
 });
