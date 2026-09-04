@@ -45,6 +45,21 @@ const FIXTURE_GROUPS: Array<{
       'preview-unavailable',
     ],
   },
+  {
+    title: 'Confirmação e processamento',
+    ids: [
+      'confirmation-ready',
+      'queued',
+      'processing-determined',
+      'processing-indeterminate',
+      'ready-no-rejects',
+      'ready-with-rejects',
+      'ready-rejects-expired',
+      'processing-failed',
+      'polling-error',
+      'polling-session-expired',
+    ],
+  },
 ]
 
 export function DevHarness() {

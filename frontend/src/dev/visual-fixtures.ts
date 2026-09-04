@@ -3,6 +3,11 @@ import type { ImportPreview } from '../api/operation-schemas.ts'
 import {
   IMPORT_ID,
   createdContext,
+  processingContext,
+  processingFailedContext,
+  processingIndeterminateContext,
+  queuedContext,
+  readyContext,
   uploadedContext,
   uploadFailedContext,
 } from '../test/fixtures.ts'
@@ -24,6 +29,16 @@ export type VisualFixtureId =
   | 'preview-invalid'
   | 'preview-truncated'
   | 'preview-unavailable'
+  | 'confirmation-ready'
+  | 'queued'
+  | 'processing-determined'
+  | 'processing-indeterminate'
+  | 'ready-no-rejects'
+  | 'ready-with-rejects'
+  | 'processing-failed'
+  | 'polling-error'
+  | 'polling-session-expired'
+  | 'ready-rejects-expired'
   | 'token-expired'
   | 'long-labels'
 
@@ -52,6 +67,13 @@ type LoadedFixture = {
     previewLoading?: boolean
     previewUnavailable?: boolean
     preview?: ImportPreview
+    initialPreview?: ImportPreview
+    pollError?: string
+    rejectedAuthExpired?: boolean
+    rejectedRows?: Array<{
+      recordNumber: number
+      errors: Array<{ fieldKey: string; code: string; message: string }>
+    }>
   }
 }
 
@@ -118,6 +140,24 @@ const truncatedPreview: ImportPreview = {
   ...invalidPreview,
   summary: { totalRows: 240, validRows: 200, invalidRows: 40 },
   sampleTruncated: true,
+}
+
+const confirmationPreview: ImportPreview = {
+  ...validPreview,
+  contentSha256: 'a'.repeat(64),
+}
+
+const readyNoRejectsContext: ImportContext = {
+  ...readyContext,
+  import: {
+    ...readyContext.import,
+    progress: {
+      processedRows: 128,
+      totalRows: 128,
+      validRows: 128,
+      invalidRows: 0,
+    },
+  },
 }
 
 export const VISUAL_FIXTURES: VisualFixture[] = [
@@ -264,6 +304,104 @@ export const VISUAL_FIXTURES: VisualFixture[] = [
     context: uploadedContext,
     presentation: {
       previewUnavailable: true,
+    },
+  },
+  {
+    id: 'confirmation-ready',
+    label: 'confirmação pronta',
+    kind: 'loaded',
+    context: uploadedContext,
+    presentation: {
+      initialPreview: confirmationPreview,
+    },
+  },
+  {
+    id: 'queued',
+    label: 'fila de processamento',
+    kind: 'loaded',
+    context: queuedContext,
+  },
+  {
+    id: 'processing-determined',
+    label: 'processando com total',
+    kind: 'loaded',
+    context: processingContext,
+  },
+  {
+    id: 'processing-indeterminate',
+    label: 'processando sem total',
+    kind: 'loaded',
+    context: processingIndeterminateContext,
+  },
+  {
+    id: 'ready-no-rejects',
+    label: 'pronto sem rejeições',
+    kind: 'loaded',
+    context: readyNoRejectsContext,
+  },
+  {
+    id: 'ready-with-rejects',
+    label: 'pronto com rejeições',
+    kind: 'loaded',
+    context: readyContext,
+    presentation: {
+      rejectedRows: [
+        {
+          recordNumber: 2,
+          errors: [
+            {
+              fieldKey: 'priceInCents',
+              code: 'FIELD.INVALID_CURRENCY',
+              message: 'Valor inválido no formato pt-BR.',
+            },
+          ],
+        },
+        {
+          recordNumber: 7,
+          errors: [
+            {
+              fieldKey: 'sku',
+              code: 'FIELD.REQUIRED',
+              message: 'Campo obrigatório ausente.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'processing-failed',
+    label: 'falha de processamento',
+    kind: 'loaded',
+    context: processingFailedContext,
+  },
+  {
+    id: 'polling-error',
+    label: 'erro de polling',
+    kind: 'loaded',
+    context: processingContext,
+    presentation: {
+      pollError:
+        'Não foi possível atualizar o progresso. A última contagem conhecida foi mantida.',
+    },
+  },
+  {
+    id: 'polling-session-expired',
+    label: 'sessão expirada no polling',
+    kind: 'shell',
+    variant: 'error',
+    title: 'Sessão expirada',
+    body: 'A sessão expirou e precisa ser reaberta pelo sistema de origem.',
+    code: 'AUTH.INVALID_IMPORT_TOKEN',
+    importId: IMPORT_ID,
+  },
+  {
+    id: 'ready-rejects-expired',
+    label: 'rejeições com token expirado',
+    kind: 'loaded',
+    context: readyContext,
+    presentation: {
+      rejectedAuthExpired: true,
     },
   },
   {

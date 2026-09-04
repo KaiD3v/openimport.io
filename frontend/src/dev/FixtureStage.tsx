@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
+import { rejectedRowsQueryKey } from '../api/query-key.ts'
 import type { ImportPreview } from '../api/operation-schemas.ts'
 import { LoadedImportView } from '../features/import-context/LoadedImportView.tsx'
 import { StatePanel } from '../features/shared/StatePanel.tsx'
@@ -156,8 +157,8 @@ function PreviewResult({ preview }: { preview: ImportPreview }) {
         </div>
       </section>
       <p className="oi-preview-end" role="status">
-        Preview concluído. A confirmação e o processamento definitivo ainda não
-        estão disponíveis nesta versão.
+        Preview do mapping atual. Confirme abaixo para congelar arquivo e mapping
+        e iniciar o processamento assíncrono.
       </p>
     </div>
   )
@@ -267,6 +268,24 @@ function PresentationOverlays({
       {presentation.preview ? (
         <PreviewResult preview={presentation.preview} />
       ) : null}
+
+      {presentation.rejectedAuthExpired ? (
+        <section
+          className="oi-workbench"
+          aria-labelledby="oi-fixture-rejected-auth"
+          data-testid="rejected-rows-panel"
+        >
+          <div className="oi-workbench-head">
+            <h2 id="oi-fixture-rejected-auth">Linhas rejeitadas</h2>
+          </div>
+          <div className="oi-inline-error" role="alert">
+            <p>
+              <strong>Sessão expirada.</strong> A sessão expirou e precisa ser
+              reaberta pelo sistema de origem.
+            </p>
+          </div>
+        </section>
+      ) : null}
     </div>
   )
 }
@@ -278,15 +297,35 @@ export function FixtureStage({
   fixture: VisualFixture
   solo?: boolean
 }) {
-  const [client] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { retry: false },
-          mutations: { retry: false },
-        },
-      }),
-  )
+  const [client] = useState(() => {
+    const next = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    if (
+      fixture.kind === 'loaded' &&
+      fixture.presentation?.rejectedRows &&
+      fixture.presentation.rejectedRows.length > 0
+    ) {
+      next.setQueryData(
+        [...rejectedRowsQueryKey(fixture.context.import.id, 1)],
+        {
+        pages: [
+          {
+            data: fixture.presentation.rejectedRows,
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      },
+      )
+    }
+
+    return next
+  })
 
   const importId =
     fixture.kind === 'shell'
@@ -326,6 +365,9 @@ export function FixtureStage({
                   context={fixture.context}
                   apiBaseUrl={HARNESS_API}
                   generation={1}
+                  initialPreview={fixture.presentation?.initialPreview ?? null}
+                  pollError={fixture.presentation?.pollError ?? null}
+                  onRetryPoll={() => undefined}
                 />
                 {fixture.presentation ? (
                   <PresentationOverlays presentation={fixture.presentation} />
