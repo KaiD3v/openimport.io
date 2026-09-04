@@ -58,7 +58,7 @@ stateDiagram-v2
 
 Em `uploaded`, mapping e preview são permitidos. Após `queued`, mapping e preview são bloqueados (`IMPORT.MAPPING_NOT_ALLOWED` / `IMPORT.PREVIEW_NOT_ALLOWED`). `upload_failed` não é reutilizado para falhas do worker — use `processing_failed`.
 
-Registros parcialmente escritos de uma execução falha **não** formam snapshot pronto: `GET .../rejected-rows` exige `ready`.
+Registros parcialmente escritos de uma execução falha **não** formam snapshot pronto: `GET .../rejected-rows` e `GET .../valid-rows` exigem `ready`. `valid-rows` usa o índice `(organizationId, importSessionId, classification, recordNumber)` com filtro adicional por `executionId`.
 
 ## Idempotência e revisão
 

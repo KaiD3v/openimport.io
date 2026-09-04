@@ -10,11 +10,15 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` roda unitários Vitest e não usa banco. `npm run test:e2e` usa `openimport_test`, aplica migrations no setup, usa Postgres/MinIO do Compose e cria organização/API key isoladas por caso. Execute `npm run typecheck` e depois `npm run build` sequencialmente: ambos rodam `prisma generate`.
+`npm test` roda unitários Vitest e não usa banco. `npm run test:e2e` usa `openimport_test`, Redis logical DB **15** (isolado do backend local em DB **0**), aplica migrations no setup, oblitera só a fila E2E antes/depois, usa Postgres/MinIO/Redis do Compose e cria organização/API key isoladas por caso. Pode executar com `start:prod` ativo. Execute `npm run typecheck` e depois `npm run build` sequencialmente: ambos rodam `prisma generate`.
 
 As fixtures E2E são isoladas por tenant. Regressões cobertas incluem BOM/UTF-8, CRLF fragmentado, aspas, limites, cleanup, idempotência, revisão concorrente, amostra/orçamento, integridade do arquivo e normalização monetária.
 
-Os 224 unitários e 67 E2E mencionados em histórico são números de uma validação anterior, não resultado dos comandos acima.
+| Sintoma E2E | Verifique | Ação segura |
+| --- | --- | --- |
+| Setup recusa REDIS_URL | DB path ≠ 15 | use `redis://localhost:6379/15` no `vitest.config.e2e.ts` |
+| Jobs completed inesperados | worker local no mesmo Redis DB | confirme isolamento DB 0 vs 15; não mate o backend |
+| Duas suítes E2E em paralelo | mesmo DB 15 | rode uma de cada vez |
 
 ## Diagnóstico seguro
 

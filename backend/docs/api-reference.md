@@ -157,7 +157,29 @@ GET /imports/:importId/rejected-rows?limit=50&after=<cursor>
 {"data":[{"recordNumber":2,"errors":[{"fieldKey":"priceInCents","code":"FIELD.INVALID_CURRENCY","message":"..."}]}],"nextCursor":null}
 ```
 
-Sem payload normalizado e sem CSV bruto. `limit` máximo = `IMPORT_REJECTED_ROWS_MAX_LIMIT` (padrão 50, teto 200). Antes de `ready`: `409 IMPORT.SNAPSHOT_NOT_READY`.
+Sem payload normalizado e sem CSV bruto. `limit` máximo = `IMPORT_REJECTED_ROWS_MAX_LIMIT` (padrão 50, teto 200). Antes de `ready`: `409 IMPORT.SNAPSHOT_NOT_READY`. Aceita API key ou token de importação da sessão.
+
+### `GET /imports/:importId/valid-rows`
+
+Entrega paginada dos registros **válidos** normalizados do snapshot `ready` para o backend do sistema cliente. **Somente API key** (`oi_live_`); token de importação recebe `403 AUTH.INSUFFICIENT_SCOPE`.
+
+```http
+GET /imports/:importId/valid-rows?limit=50&after=<cursor>
+```
+
+```json
+{"importId":"<uuid>","executionId":"<uuid>","data":[{"recordNumber":1,"data":{"sku":"TEN-001","priceInCents":29990}}],"nextCursor":"<opaque-or-null>"}
+```
+
+- `data[].data` é exatamente o payload persistido (sem CSV bruto, sem erros de inválidos, sem IDs internos).
+- Ordenação fixa por `recordNumber` ASC; paginação por keyset (`limit + 1`), cursor opaco versionado ligado à `executionId`.
+- Sem válidos: `200`, `data: []`, `nextCursor: null`.
+- `limit` padrão 50; máximo público 100, limitado também por `IMPORT_VALID_ROWS_MAX_LIMIT` (padrão 100).
+- Antes de `ready` (sessão ou execução): `409 IMPORT.SNAPSHOT_NOT_READY`.
+- Cursor malformado ou de outra execução: `400 VALIDATION.FAILED`.
+- Outra organização: `404 IMPORT.NOT_FOUND`.
+- Leitura não altera status, progresso nem registros. `Cache-Control: no-store`.
+- Orçamento de resposta por bytes pode ser adicionado depois; o arquivo já é limitado por `IMPORT_MAX_FILE_BYTES`.
 
 ## Walkthrough reproduzível
 
@@ -177,9 +199,10 @@ $session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h
 $confirm = Invoke-RestMethod "$api/imports/$($session.id)/confirm" -Method Post -Headers $h -ContentType 'application/json' -Body (@{ expectedMappingRevision=$saved.revision; expectedContentSha256=$session.contentSha256 } | ConvertTo-Json)
 do { Start-Sleep -Milliseconds 200; $session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h } while ($session.status -in @('queued','processing'))
 Invoke-RestMethod "$api/imports/$($session.id)/rejected-rows?limit=50" -Headers $h
+Invoke-RestMethod "$api/imports/$($session.id)/valid-rows?limit=50" -Headers $h
 ```
 
-Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de ambiente. O CSV inválido retorna 200 no preview, com 1 linha válida normalizada para centavos e linhas inválidas detalhadas; veja [fixtures](csv-and-normalization.md#fixtures-documentais).
+Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de ambiente. O CSV inválido retorna 200 no preview, com 1 linha válida normalizada para centavos e linhas inválidas detalhadas; veja [fixtures](csv-and-normalization.md#fixtures-documentais). `valid-rows` exige a API key organizacional — não use o token do navegador.
 
 ## Divergências conhecidas com OpenAPI
 

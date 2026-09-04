@@ -17,7 +17,7 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 
 ## Limitações conhecidas
 
-Não há listagem, histórico, entrega de válidos ao cliente, registro de resultado do cliente, webhook `import.ready`, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada ou readiness de storage/Redis.
+Não há listagem, histórico, registro de resultado do cliente, webhook `import.ready`, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada ou readiness de storage/Redis.
 
 ## Próximos passos possíveis, não comprometidos
 

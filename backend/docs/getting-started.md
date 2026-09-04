@@ -76,7 +76,7 @@ npm test
 npm run test:e2e
 ```
 
-E2E requer Postgres e MinIO do Compose, aplica as migrations em `openimport_test` e cria organizações isoladas. Para checagem estática e build, execute em sequência porque ambos geram Prisma:
+E2E requer Postgres, MinIO e Redis do Compose. Aplica migrations em `openimport_test` e usa Redis logical database **15** (`redis://localhost:6379/15`), isolado do backend local em DB **0**. Pode rodar com `npm run start:prod` ativo — os workers não compartilham a fila. Duas suítes E2E simultâneas no mesmo DB 15 não são suportadas. Para checagem estática e build, execute em sequência porque ambos geram Prisma:
 
 ```powershell
 npm run typecheck

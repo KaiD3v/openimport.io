@@ -9,7 +9,7 @@ O backend NestJS expõe uma API multi-tenant. A organização vem da credencial 
 - `TemplateModule`: controller, serviço e repository para templates e fields.
 - `ImportModule`: controller, serviço/repository de sessões, mapping, CSV, `PreviewService`, `ConfirmService`, `RejectedRowsService` e `ImportProcessingWorker` (BullMQ).
 - `ObjectStorageModule`: porta `OBJECT_STORAGE`; `S3ObjectStorage` é o adaptador S3/MinIO.
-- Redis + BullMQ: fila `import-processing` para confirmar → processar fora da requisição HTTP.
+- Redis + BullMQ: fila `import-processing`. Desenvolvimento usa Redis DB 0 (`REDIS_URL=.../0`); E2E usa DB 15 para não cruzar jobs com `start:prod`/`start:dev`.
 - `DatabaseModule`: `PrismaService` com adapter PostgreSQL.
 - HTTP transversal: Helmet, CORS, validation pipe estrita, Pino, request ID e filtro de exceções.
 

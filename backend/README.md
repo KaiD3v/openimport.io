@@ -26,7 +26,7 @@ npm run prisma:seed
 npm run start:dev
 ```
 
-O banco de desenvolvimento é `openimport`; E2E usa `openimport_test`. Não use `prisma db push`, não crie migration para instalar e não versiona `.env`.
+O banco de desenvolvimento é `openimport` (Postgres) + Redis DB `0`; E2E usa `openimport_test` + Redis DB `15`. Não use `prisma db push`, não crie migration para instalar e não versiona `.env`.
 
 URLs locais:
 
@@ -43,9 +43,9 @@ URLs locais:
 4. Consultar e salvar mapping com revisão otimista.
 5. Executar preview `pt-BR-v1` (dry-run).
 6. Confirmar com revisão + SHA-256 → `queued` (worker + reconciliador no mesmo processo Nest em desenvolvimento).
-7. Aguardar worker até `ready` (ou `processing_failed` com `failure` público) e consultar `rejected-rows` quando ready.
+7. Aguardar worker até `ready` (ou `processing_failed` com `failure` público); consultar `rejected-rows` e, com API key no backend cliente, `valid-rows`.
 
-Não há entrega em lote ao cliente, webhook `import.ready`, listagem/histórico, cancelamento, XLSX nem autenticação de usuário para navegador.
+Não há webhook `import.ready`, listagem/histórico, cancelamento, XLSX nem autenticação de usuário para navegador.
 
 ## Comandos
 
