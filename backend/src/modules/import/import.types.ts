@@ -102,3 +102,34 @@ export type ImportValidRecord = {
   recordNumber: number;
   payload: unknown;
 };
+
+export type ImportClientResultOutcome = 'accepted' | 'rejected';
+
+export type ImportResultBatchRecord = {
+  id: string;
+  organizationId: string;
+  importSessionId: string;
+  executionId: string;
+  idempotencyKeyHash: string;
+  requestFingerprint: string;
+  itemCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ImportRecordResultWrite = {
+  recordNumber: number;
+  outcome: ImportClientResultOutcome;
+  clientRecordId: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+};
+
+export type ImportResultsSummaryCounts = {
+  totalValid: number;
+  reported: number;
+  accepted: number;
+  rejected: number;
+  pending: number;
+  isComplete: boolean;
+};

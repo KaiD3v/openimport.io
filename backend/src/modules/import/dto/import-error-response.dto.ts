@@ -272,3 +272,54 @@ export class ImportSnapshotNotReadyErrorDto {
   @ApiProperty({ example: TRACE_ID_EXAMPLE })
   traceId!: string;
 }
+
+export class ImportResultsNotAllowedErrorDto {
+  @ApiProperty({ example: 'IMPORT.RESULTS_NOT_ALLOWED' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'Client results can only be reported after processing completes successfully.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportResultsInvalidErrorDto {
+  @ApiProperty({ example: 'IMPORT.RESULTS_INVALID' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'One or more result items are invalid for this ready execution.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportResultsConflictErrorDto {
+  @ApiProperty({ example: 'IMPORT.RESULTS_CONFLICT' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'A final client result already exists for one or more records with a different outcome.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}

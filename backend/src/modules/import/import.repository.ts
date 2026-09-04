@@ -6,8 +6,11 @@ import type {
   CreateImportSessionData,
   ImportExecutionRecord,
   ImportMappingPairRecord,
+  ImportRecordResultWrite,
   ImportRecordWrite,
   ImportRejectedRecord,
+  ImportResultBatchRecord,
+  ImportResultsSummaryCounts,
   ImportSessionRecord,
   ImportValidRecord,
   MarkUploadedData,
@@ -622,5 +625,131 @@ export class ImportRepository {
       recordNumber: row.recordNumber,
       payload: row.payload,
     }));
+  }
+
+  findResultBatchByIdempotencyKeyHash(
+    organizationId: string,
+    idempotencyKeyHash: string,
+  ): Promise<ImportResultBatchRecord | null> {
+    return this.prisma.importResultBatch.findFirst({
+      where: { organizationId, idempotencyKeyHash },
+    });
+  }
+
+  async findValidRecordNumbers(params: {
+    organizationId: string;
+    importSessionId: string;
+    executionId: string;
+    recordNumbers: number[];
+  }): Promise<number[]> {
+    if (params.recordNumbers.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.importRecord.findMany({
+      where: {
+        organizationId: params.organizationId,
+        importSessionId: params.importSessionId,
+        executionId: params.executionId,
+        classification: 'valid',
+        recordNumber: { in: params.recordNumbers },
+      },
+      select: { recordNumber: true },
+    });
+    return rows.map((row) => row.recordNumber);
+  }
+
+  async findExistingRecordResults(params: {
+    organizationId: string;
+    executionId: string;
+    recordNumbers: number[];
+  }): Promise<Array<{ recordNumber: number; outcome: string }>> {
+    if (params.recordNumbers.length === 0) {
+      return [];
+    }
+    return this.prisma.importRecordResult.findMany({
+      where: {
+        organizationId: params.organizationId,
+        executionId: params.executionId,
+        recordNumber: { in: params.recordNumbers },
+      },
+      select: {
+        recordNumber: true,
+        outcome: true,
+      },
+    });
+  }
+
+  async createResultBatchWithItems(params: {
+    organizationId: string;
+    importSessionId: string;
+    executionId: string;
+    idempotencyKeyHash: string;
+    requestFingerprint: string;
+    items: ImportRecordResultWrite[];
+  }): Promise<ImportResultBatchRecord> {
+    return this.prisma.$transaction(async (tx) => {
+      const batch = await tx.importResultBatch.create({
+        data: {
+          organizationId: params.organizationId,
+          importSessionId: params.importSessionId,
+          executionId: params.executionId,
+          idempotencyKeyHash: params.idempotencyKeyHash,
+          requestFingerprint: params.requestFingerprint,
+          itemCount: params.items.length,
+        },
+      });
+
+      await tx.importRecordResult.createMany({
+        data: params.items.map((item) => ({
+          organizationId: params.organizationId,
+          importSessionId: params.importSessionId,
+          executionId: params.executionId,
+          batchId: batch.id,
+          recordNumber: item.recordNumber,
+          outcome: item.outcome,
+          clientRecordId: item.clientRecordId,
+          errorCode: item.errorCode,
+          errorMessage: item.errorMessage,
+        })),
+      });
+
+      return batch;
+    });
+  }
+
+  async summarizeClientResults(params: {
+    organizationId: string;
+    executionId: string;
+    totalValid: number;
+  }): Promise<ImportResultsSummaryCounts> {
+    const grouped = await this.prisma.importRecordResult.groupBy({
+      by: ['outcome'],
+      where: {
+        organizationId: params.organizationId,
+        executionId: params.executionId,
+      },
+      _count: { _all: true },
+    });
+
+    let accepted = 0;
+    let rejected = 0;
+    for (const row of grouped) {
+      if (row.outcome === 'accepted') {
+        accepted = row._count._all;
+      } else if (row.outcome === 'rejected') {
+        rejected = row._count._all;
+      }
+    }
+
+    const reported = accepted + rejected;
+    const pending = Math.max(0, params.totalValid - reported);
+    return {
+      totalValid: params.totalValid,
+      reported,
+      accepted,
+      rejected,
+      pending,
+      isComplete: pending === 0,
+    };
   }
 }
