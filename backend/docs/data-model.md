@@ -60,6 +60,8 @@ Em `uploaded`, mapping e preview são permitidos. Após `queued`, mapping e prev
 
 Registros parcialmente escritos de uma execução falha **não** formam snapshot pronto: `GET .../rejected-rows` e `GET .../valid-rows` exigem `ready`. `valid-rows` usa o índice `(organizationId, importSessionId, classification, recordNumber)` com filtro adicional por `executionId`.
 
+Resultados do cliente (`ImportResultBatch` / `ImportRecordResult`) vinculam-se à execução `ready`. A chave idempotente do lote é guardada só como hash; o resultado final por `(executionId, recordNumber)` é único e não sobrescrevível. `isComplete` no resumo significa `pending === 0` e **não** altera o status `ready` da sessão.
+
 ## Idempotência e revisão
 
 `POST /imports` exige `Idempotency-Key` (8–128, `[A-Za-z0-9._-]`). A sessão guarda hash da chave e fingerprint de `{ templateId }`, ambos por organização. Mesma chave e mesmo payload retorna a sessão original; payload diferente retorna `409 IDEMPOTENCY.KEY_REUSED`.
@@ -67,3 +69,5 @@ Registros parcialmente escritos de uma execução falha **não** formam snapshot
 O mapping começa em revisão `0`. `PUT /imports/:importId/mapping` requer `expectedRevision` e atualiza apenas se revisão e status ainda coincidirem (`status: uploaded`). Pares semanticamente iguais são no-op.
 
 Confirmação usa CAS `uploaded → queued` + fingerprint `(revision, contentSha256)`. Replay do mesmo snapshot retorna a mesma execução; BullMQ usa `jobId` determinístico `import-process.{sessionId}.{fingerprint}`. Replay e reconciliador consultam o estado público do job (não bastam `getJob` truthy): estados processáveis são mantidos; `failed`/`completed` com execução ainda `queued`|`processing` são removidos e republicados.
+
+`POST /imports/:importId/results` exige `Idempotency-Key` com o mesmo formato. O lote guarda hash da chave e fingerprint canônico de `{ executionId, results ordenados por recordNumber }`. Replay idêntico retorna o mesmo `batchId`; payload diferente retorna `409 IDEMPOTENCY.KEY_REUSED`.

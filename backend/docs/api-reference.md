@@ -181,6 +181,46 @@ GET /imports/:importId/valid-rows?limit=50&after=<cursor>
 - Leitura não altera status, progresso nem registros. `Cache-Control: no-store`.
 - Orçamento de resposta por bytes pode ser adicionado depois; o arquivo já é limitado por `IMPORT_MAX_FILE_BYTES`.
 
+### `POST /imports/:importId/results`
+
+Registra, em lote atômico e idempotente, quais registros **válidos** o sistema cliente aceitou ou rejeitou. **Somente API key**. Exige header `Idempotency-Key` (hash SHA-256 persistido; fingerprint canônico do payload).
+
+```http
+POST /imports/:importId/results
+Idempotency-Key: client-batch-001
+Content-Type: application/json
+
+{"executionId":"<uuid>","results":[{"recordNumber":1,"outcome":"accepted","clientRecordId":"sku-1"},{"recordNumber":3,"outcome":"rejected","error":{"code":"SKU_EXISTS","message":"Already exists"}}]}
+```
+
+```json
+{"importId":"<uuid>","executionId":"<uuid>","batchId":"<uuid>","replayed":false,"summary":{"importId":"<uuid>","executionId":"<uuid>","totalValid":5,"reported":2,"accepted":1,"rejected":1,"pending":3,"isComplete":false}}
+```
+
+- Itens só para `recordNumber` **valid** da execução `ready` informada.
+- `recordNumber` é inteiro JSON em `[1, 2147483647]` (domínio PostgreSQL `INTEGER`); fora disso: `400 VALIDATION.FAILED`.
+- `rejected` exige `error.code` / `error.message` limitados; `accepted` omite `error`.
+- Lote inteiro grava ou nada; tamanho máximo público 100, limitado por `IMPORT_RESULT_BATCH_MAX_SIZE`.
+- Replay da mesma chave + mesmo payload: `200` com `replayed: true` e o mesmo `batchId`.
+- Mesma chave + payload diferente: `409 IDEMPOTENCY.KEY_REUSED`.
+- Registro já finalizado (lote distinto): `409 IMPORT.RESULTS_CONFLICT`.
+- Duplicata no request, inválido, inexistente ou execução errada: `422 IMPORT.RESULTS_INVALID`.
+- Antes de `ready`: `409 IMPORT.RESULTS_NOT_ALLOWED`.
+- Token `oi_import_`: `403 AUTH.INSUFFICIENT_SCOPE`. Não altera o status `ready`.
+
+### `GET /imports/:importId/results/summary`
+
+Resumo agregado calculado no servidor (não confia em contadores do cliente):
+
+```json
+{"importId":"<uuid>","executionId":"<uuid>","totalValid":5,"reported":5,"accepted":4,"rejected":1,"pending":0,"isComplete":true}
+```
+
+- Invariantes: `reported = accepted + rejected`, `pending = totalValid - reported`, `isComplete` iff `pending === 0`.
+- Importação com zero válidos: `isComplete: true` sem POST.
+- `isComplete` significa que todos os válidos receberam resultado do cliente — **não** muda o status da sessão.
+- Sem payloads normalizados. `Cache-Control: no-store`. Somente API key.
+
 ## Walkthrough reproduzível
 
 Com API local e `API_KEY` privado configurado, a partir de `backend/`, use os arquivos em [`examples/`](examples/). No PowerShell:
@@ -199,10 +239,13 @@ $session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h
 $confirm = Invoke-RestMethod "$api/imports/$($session.id)/confirm" -Method Post -Headers $h -ContentType 'application/json' -Body (@{ expectedMappingRevision=$saved.revision; expectedContentSha256=$session.contentSha256 } | ConvertTo-Json)
 do { Start-Sleep -Milliseconds 200; $session = Invoke-RestMethod "$api/imports/$($session.id)" -Headers $h } while ($session.status -in @('queued','processing'))
 Invoke-RestMethod "$api/imports/$($session.id)/rejected-rows?limit=50" -Headers $h
-Invoke-RestMethod "$api/imports/$($session.id)/valid-rows?limit=50" -Headers $h
+$valid = Invoke-RestMethod "$api/imports/$($session.id)/valid-rows?limit=50" -Headers $h
+$batch = @{ executionId = $valid.executionId; results = @(@{ recordNumber = $valid.data[0].recordNumber; outcome = 'accepted'; clientRecordId = 'demo-1' }) } | ConvertTo-Json -Depth 4
+Invoke-RestMethod "$api/imports/$($session.id)/results" -Method Post -Headers ($h + @{ 'Idempotency-Key' = 'docs-results-001' }) -ContentType 'application/json' -Body $batch
+Invoke-RestMethod "$api/imports/$($session.id)/results/summary" -Headers $h
 ```
 
-Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de ambiente. O CSV inválido retorna 200 no preview, com 1 linha válida normalizada para centavos e linhas inválidas detalhadas; veja [fixtures](csv-and-normalization.md#fixtures-documentais). `valid-rows` exige a API key organizacional — não use o token do navegador.
+Em Bash, use `curl` com os mesmos caminhos/corpos e `API_KEY` como variável de ambiente. O CSV inválido retorna 200 no preview, com 1 linha válida normalizada para centavos e linhas inválidas detalhadas; veja [fixtures](csv-and-normalization.md#fixtures-documentais). `valid-rows` e `results` exigem a API key organizacional — não use o token do navegador.
 
 ## Divergências conhecidas com OpenAPI
 

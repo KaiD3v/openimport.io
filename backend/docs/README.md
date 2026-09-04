@@ -13,7 +13,7 @@ Esta documentação descreve somente o backend atualmente implementado. O contra
 
 ## Escopo implementado
 
-- API key de organização, token de importação restrito à sessão, templates, sessões idempotentes, upload CSV para storage S3 compatível, mapping manual, preview síncrono com normalização `pt-BR-v1`, confirmação idempotente e processamento assíncrono (Redis/BullMQ) até snapshot `ready` com rejected-rows e valid-rows paginadas (valid-rows só com API key).
+- API key de organização, token de importação restrito à sessão, templates, sessões idempotentes, upload CSV para storage S3 compatível, mapping manual, preview síncrono com normalização `pt-BR-v1`, confirmação idempotente e processamento assíncrono (Redis/BullMQ) até snapshot `ready` com rejected-rows, valid-rows e registro idempotente de resultados do cliente (valid-rows/results só com API key).
 - Health, readiness, logs estruturados, request IDs e OpenAPI.
 
 Não existem webhook `import.ready`, DLQ completa, webhooks assinados, XLSX, endpoints de listagem/histórico, RBAC geral, autenticação de usuário de navegador, cookies/OAuth/refresh token ou gestão de API keys por HTTP.

@@ -17,7 +17,7 @@ Para o frontend, o backend da organização emite um token de importação (`oi_
 7. Salve todo o mapping com `PUT /imports/:importId/mapping` e `expectedRevision` atual. Associe posição de coluna a field, nunca texto do header.
 8. Quando `isComplete`, execute `POST /imports/:importId/preview` com `expectedMappingRevision` da resposta de mapping.
 9. Confirme com `POST /imports/:importId/confirm` (`expectedMappingRevision` + `expectedContentSha256`). A resposta `202` deixa a sessão em `queued`; faça poll em `GET /imports/:importId` até `ready` ou `processing_failed`. Após confirmação, mapping não pode mais ser alterado.
-10. Com `ready`, consulte `GET /imports/:importId/rejected-rows` (cursor) no navegador se precisar. A entrega dos válidos ao sistema cliente é `GET /imports/:importId/valid-rows` **somente com API key no backend** — o token `oi_import_` recebe `403`.
+10. Com `ready`, consulte `GET /imports/:importId/rejected-rows` (cursor) no navegador se precisar. A entrega dos válidos e o registro de aceitos/rejeitados (`GET .../valid-rows`, `POST .../results`, `GET .../results/summary`) são **somente com API key no backend** — o token `oi_import_` recebe `403`.
 
 O token vale só para o `importId` vinculado. Outra sessão da mesma organização responde `404 IMPORT.NOT_FOUND`. Criar sessão, emitir outro token ou acessar templates com o token responde `403 AUTH.INSUFFICIENT_SCOPE`. Token expirado, revogado, desconhecido ou cuja API key emissora esteja revogada responde `401 AUTH.INVALID_IMPORT_TOKEN` sem detalhar o motivo.
 

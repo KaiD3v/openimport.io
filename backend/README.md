@@ -43,7 +43,7 @@ URLs locais:
 4. Consultar e salvar mapping com revisão otimista.
 5. Executar preview `pt-BR-v1` (dry-run).
 6. Confirmar com revisão + SHA-256 → `queued` (worker + reconciliador no mesmo processo Nest em desenvolvimento).
-7. Aguardar worker até `ready` (ou `processing_failed` com `failure` público); consultar `rejected-rows` e, com API key no backend cliente, `valid-rows`.
+7. Aguardar worker até `ready` (ou `processing_failed` com `failure` público); consultar `rejected-rows` e, com API key no backend cliente, `valid-rows` + `results` / `results/summary`.
 
 Não há webhook `import.ready`, listagem/histórico, cancelamento, XLSX nem autenticação de usuário para navegador.
 
