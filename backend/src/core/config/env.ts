@@ -105,6 +105,12 @@ export const envSchema = z
       .positive()
       .max(100)
       .default(100),
+    IMPORT_RESULT_BATCH_MAX_SIZE: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100)
+      .default(100),
     IMPORT_JOB_RECONCILE_INTERVAL_MS: z.coerce
       .number()
       .int()

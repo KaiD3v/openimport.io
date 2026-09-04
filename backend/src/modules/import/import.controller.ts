@@ -54,6 +54,11 @@ import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
 import { ListRejectedRowsQueryDto } from './dto/list-rejected-rows-query.dto.js';
 import { ListValidRowsQueryDto } from './dto/list-valid-rows-query.dto.js';
 import { ValidRowsResponseDto } from './dto/valid-rows-response.dto.js';
+import { ReportImportResultsDto } from './dto/report-import-results.dto.js';
+import {
+  ImportResultsSummaryDto,
+  ReportImportResultsResponseDto,
+} from './dto/report-import-results-response.dto.js';
 import {
   IdempotencyKeyReusedErrorDto,
   ImportConfirmationNotAllowedErrorDto,
@@ -69,6 +74,9 @@ import {
   ImportPreviewNotAllowedErrorDto,
   ImportPreviewUnavailableErrorDto,
   ImportProcessingUnavailableErrorDto,
+  ImportResultsConflictErrorDto,
+  ImportResultsInvalidErrorDto,
+  ImportResultsNotAllowedErrorDto,
   ImportSnapshotNotReadyErrorDto,
   ImportUploadNotAllowedErrorDto,
   TemplateNotFoundErrorDto,
@@ -79,6 +87,7 @@ import { ImportService } from './import.service.js';
 import { PreviewService } from './preview/preview.service.js';
 import { RejectedRowsService } from './processing/rejected-rows.service.js';
 import { ValidRowsService } from './processing/valid-rows.service.js';
+import { ReportResultsService } from './results/report-results.service.js';
 
 const importIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
@@ -106,6 +115,10 @@ const importIdPipe = new ParseUUIDPipe({
   ImportPreviewUnavailableErrorDto,
   ImportConfirmationNotAllowedErrorDto,
   ImportProcessingUnavailableErrorDto,
+  ImportResultsConflictErrorDto,
+  ImportResultsInvalidErrorDto,
+  ImportResultsNotAllowedErrorDto,
+  IdempotencyKeyReusedErrorDto,
   ImportSnapshotNotReadyErrorDto,
 )
 @Controller('imports')
@@ -116,6 +129,7 @@ export class ImportController {
     private readonly confirms: ConfirmService,
     private readonly rejectedRows: RejectedRowsService,
     private readonly validRows: ValidRowsService,
+    private readonly reportResults: ReportResultsService,
   ) {}
 
   @Post()
@@ -398,6 +412,76 @@ export class ImportController {
     @Query() query: ListValidRowsQueryDto,
   ): Promise<ValidRowsResponseDto> {
     return this.validRows.list(organization.organizationId, importId, query);
+  }
+
+  @Get(':importId/results/summary')
+  @ApiKeyOnlyAuth()
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'Summarize client-reported accepted/rejected results for the ready snapshot. API key only. isComplete means every valid row has a client result; session status stays ready.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ImportResultsSummaryDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({ status: 409, type: ImportResultsNotAllowedErrorDto })
+  summarizeResults(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+  ): Promise<ImportResultsSummaryDto> {
+    return this.reportResults.summarize(
+      organization.organizationId,
+      importId,
+    );
+  }
+
+  @Post(':importId/results')
+  @ApiKeyOnlyAuth()
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Report an atomic, idempotent batch of client accept/reject outcomes for valid rows. API key only.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: '8–128 characters [A-Za-z0-9._-]. Stored as SHA-256 only.',
+  })
+  @ApiBody({ type: ReportImportResultsDto })
+  @ApiResponse({ status: 200, type: ReportImportResultsResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({
+    status: 409,
+    description: 'Not allowed, idempotency reuse, or result conflict',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ImportResultsNotAllowedErrorDto) },
+        { $ref: getSchemaPath(IdempotencyKeyReusedErrorDto) },
+        { $ref: getSchemaPath(ImportResultsConflictErrorDto) },
+      ],
+    },
+  })
+  @ApiResponse({ status: 422, type: ImportResultsInvalidErrorDto })
+  reportResultsBatch(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Body() body: ReportImportResultsDto,
+  ): Promise<ReportImportResultsResponseDto> {
+    return this.reportResults.report(
+      organization.organizationId,
+      importId,
+      body,
+      idempotencyKey,
+    );
   }
 
   @Post(':importId/file')
