@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../../core/database/prisma.service.js';
+import {
+  WEBHOOK_READY_OUTBOX,
+  type WebhookReadyOutbox,
+} from '../webhook/webhook.types.js';
 import type {
   CreateExecutionData,
   CreateImportSessionData,
@@ -18,6 +22,11 @@ import type {
 import type { ProgressCounters } from './processing/progress.js';
 import type { FieldError } from './normalize/normalize.js';
 
+export type MarkExecutionReadyResult = {
+  published: boolean;
+  webhookDeliveryId: string | null;
+};
+
 const sessionInclude = {
   columns: {
     orderBy: { position: 'asc' as const },
@@ -31,7 +40,10 @@ const sessionInclude = {
 
 @Injectable()
 export class ImportRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(WEBHOOK_READY_OUTBOX) private readonly webhookOutbox: WebhookReadyOutbox,
+  ) {}
 
   create(
     organizationId: string,
@@ -364,7 +376,7 @@ export class ImportRepository {
     executionId: string,
     importSessionId: string,
     progress: ProgressCounters,
-  ): Promise<boolean> {
+  ): Promise<MarkExecutionReadyResult> {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.importExecution.updateMany({
         where: {
@@ -386,7 +398,7 @@ export class ImportRepository {
       });
 
       if (updated.count !== 1) {
-        return false;
+        return { published: false, webhookDeliveryId: null };
       }
 
       const sessionUpdated = await tx.importSession.updateMany({
@@ -402,7 +414,16 @@ export class ImportRepository {
           'Import session ready CAS missed after execution was marked ready',
         );
       }
-      return true;
+
+      const webhookDeliveryId =
+        await this.webhookOutbox.insertImportReadyInTransaction(tx, {
+          organizationId,
+          importSessionId,
+          executionId,
+          counts: progress,
+        });
+
+      return { published: true, webhookDeliveryId };
     });
   }
 

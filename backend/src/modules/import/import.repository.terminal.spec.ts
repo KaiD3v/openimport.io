@@ -6,6 +6,9 @@ describe('ImportRepository terminal transitions', () => {
   let prisma: {
     $transaction: ReturnType<typeof vi.fn>;
   };
+  let outbox: {
+    insertImportReadyInTransaction: ReturnType<typeof vi.fn>;
+  };
   let repo: ImportRepository;
 
   const orgId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -16,7 +19,13 @@ describe('ImportRepository terminal transitions', () => {
     prisma = {
       $transaction: vi.fn(),
     };
-    repo = new ImportRepository(prisma as unknown as PrismaService);
+    outbox = {
+      insertImportReadyInTransaction: vi.fn().mockResolvedValue(null),
+    };
+    repo = new ImportRepository(
+      prisma as unknown as PrismaService,
+      outbox as never,
+    );
   });
 
   it('failExecutionAndDiscardRecords does not delete when execution CAS loses', async () => {
@@ -83,7 +92,66 @@ describe('ImportRepository terminal transitions', () => {
     expect(tx.importRecord.deleteMany).toHaveBeenCalled();
   });
 
-  it('markExecutionReady CAS session miss throws so the transaction rolls back', async () => {
+  it('markExecutionReady inserts a webhook delivery in the same transaction after a won CAS', async () => {
+    const tx = {
+      importExecution: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      importSession: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (fn) => fn(tx));
+    outbox.insertImportReadyInTransaction.mockResolvedValue('delivery-1');
+
+    const result = await repo.markExecutionReady(orgId, execId, sessionId, {
+      processedRows: 2,
+      validRows: 1,
+      invalidRows: 1,
+      totalRows: 2,
+    });
+
+    expect(result).toEqual({
+      published: true,
+      webhookDeliveryId: 'delivery-1',
+    });
+    expect(outbox.insertImportReadyInTransaction).toHaveBeenCalledWith(tx, {
+      organizationId: orgId,
+      importSessionId: sessionId,
+      executionId: execId,
+      counts: {
+        processedRows: 2,
+        validRows: 1,
+        invalidRows: 1,
+        totalRows: 2,
+      },
+    });
+  });
+
+  it('markExecutionReady is a no-op for webhooks when CAS loses', async () => {
+    const tx = {
+      importExecution: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      importSession: {
+        updateMany: vi.fn(),
+      },
+    };
+    prisma.$transaction.mockImplementation(async (fn) => fn(tx));
+
+    const result = await repo.markExecutionReady(orgId, execId, sessionId, {
+      processedRows: 2,
+      validRows: 1,
+      invalidRows: 1,
+      totalRows: 2,
+    });
+
+    expect(result).toEqual({ published: false, webhookDeliveryId: null });
+    expect(tx.importSession.updateMany).not.toHaveBeenCalled();
+    expect(outbox.insertImportReadyInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('markExecutionReady does not insert a delivery when the session CAS rolls back', async () => {
     const tx = {
       importExecution: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -102,6 +170,7 @@ describe('ImportRepository terminal transitions', () => {
         totalRows: 2,
       }),
     ).rejects.toThrow(/session/i);
+    expect(outbox.insertImportReadyInTransaction).not.toHaveBeenCalled();
   });
 
   it('failExecutionAndDiscardRecords returns true for already-failed coherent state without mutating session again', async () => {

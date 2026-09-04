@@ -82,6 +82,7 @@ describe('ImportProcessingWorker failure integrity', () => {
         IMPORT_MAX_FIELD_BYTES: 256,
         IMPORT_WORKER_CONCURRENCY: 2,
       } as Env,
+      { enqueueBestEffort: vi.fn() } as never,
     );
   });
 

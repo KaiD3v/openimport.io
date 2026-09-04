@@ -4,6 +4,7 @@ import { ObjectStorageModule } from '../../integrations/object-storage/object-st
 import { ENV } from '../../core/config/env.token.js';
 import type { Env } from '../../core/config/env.js';
 import { TemplateModule } from '../template/index.js';
+import { WebhookModule } from '../webhook/index.js';
 import { ConfirmService } from './confirm/confirm.service.js';
 import { ImportController } from './import.controller.js';
 import { ImportRepository } from './import.repository.js';
@@ -32,6 +33,7 @@ import { ReportResultsService } from './results/report-results.service.js';
     BullModule.registerQueue({
       name: IMPORT_PROCESSING_QUEUE,
     }),
+    WebhookModule,
   ],
   controllers: [ImportController],
   providers: [

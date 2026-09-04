@@ -45,6 +45,7 @@ import {
   type ImportProcessingJobData,
 } from './import-processing.queue.js';
 import { resolveImportWorkerConcurrency } from './worker-concurrency.js';
+import { WebhookDeliveryJobPublisher } from '../../webhook/delivery/webhook-delivery.publisher.js';
 
 function abortStream(stream: Readable | undefined): void {
   if (!stream || stream.destroyed) {
@@ -73,6 +74,7 @@ export class ImportProcessingWorker extends WorkerHost {
     private readonly templates: TemplateRepository,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(ENV) private readonly env: Env,
+    private readonly webhookJobs: WebhookDeliveryJobPublisher,
   ) {
     super();
   }
@@ -277,7 +279,7 @@ export class ImportProcessingWorker extends WorkerHost {
         importSessionId,
         progress,
       );
-      if (!published) {
+      if (!published.published) {
         this.logger.warn({
           msg: 'import.processing.ready_cas_miss',
           executionId,
@@ -300,6 +302,14 @@ export class ImportProcessingWorker extends WorkerHost {
         validRows: progress.validRows,
         invalidRows: progress.invalidRows,
       });
+
+      if (published.webhookDeliveryId) {
+        await this.webhookJobs.enqueueBestEffort({
+          deliveryId: published.webhookDeliveryId,
+          organizationId,
+          traceId,
+        });
+      }
     } catch (error) {
       abortStream(opened);
       abortStream(hasher);
