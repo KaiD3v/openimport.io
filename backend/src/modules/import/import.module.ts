@@ -17,6 +17,7 @@ import { ImportProcessingWorker } from './processing/import-processing.worker.js
 import { RejectedRowsService } from './processing/rejected-rows.service.js';
 import { ValidRowsService } from './processing/valid-rows.service.js';
 import { ReportResultsService } from './results/report-results.service.js';
+import { ImportFileRetentionCleaner } from './storage/import-file-retention.cleaner.js';
 
 @Module({
   imports: [
@@ -47,7 +48,12 @@ import { ReportResultsService } from './results/report-results.service.js';
     ImportProcessingJobPublisher,
     ImportProcessingWorker,
     ImportProcessingReconciler,
+    ImportFileRetentionCleaner,
   ],
-  exports: [ImportService, ImportProcessingReconciler],
+  exports: [
+    ImportService,
+    ImportProcessingReconciler,
+    ImportFileRetentionCleaner,
+  ],
 })
 export class ImportModule {}
