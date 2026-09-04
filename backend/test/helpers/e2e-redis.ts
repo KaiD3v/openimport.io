@@ -23,9 +23,9 @@ export function assertIsolationProbeQueueName(queueName: string): void {
       `Isolation probe queue must start with ${ISOLATION_PROBE_QUEUE_PREFIX}-`,
     );
   }
-  if (queueName === 'import-processing') {
+  if (queueName === 'import-processing' || queueName === 'webhook-delivery') {
     throw new Error(
-      'Isolation probe queue must not use the operational import-processing queue.',
+      'Isolation probe queue must not use operational queues.',
     );
   }
 }
@@ -120,17 +120,15 @@ export function assertE2eRedisUrl(redisUrl: string): number {
   return database;
 }
 
-export async function withE2eImportQueue<T>(
+export async function withE2eQueue<T>(
   redisUrl: string,
+  queueName: string,
   run: (queue: import('bullmq').Queue) => Promise<T>,
 ): Promise<T> {
   assertE2eRedisUrl(redisUrl);
   const { Queue } = await import('bullmq');
-  const { IMPORT_PROCESSING_QUEUE } = await import(
-    '../../src/modules/import/processing/import-processing.queue.js'
-  );
 
-  const queue = new Queue(IMPORT_PROCESSING_QUEUE, {
+  const queue = new Queue(queueName, {
     connection: {
       url: redisUrl,
       maxRetriesPerRequest: null,
@@ -144,9 +142,28 @@ export async function withE2eImportQueue<T>(
   }
 }
 
-/** Obliterate only the E2E logical DB queue. Never call with development URLs. */
+export async function withE2eImportQueue<T>(
+  redisUrl: string,
+  run: (queue: import('bullmq').Queue) => Promise<T>,
+): Promise<T> {
+  const { IMPORT_PROCESSING_QUEUE } = await import(
+    '../../src/modules/import/processing/import-processing.queue.js'
+  );
+  return withE2eQueue(redisUrl, IMPORT_PROCESSING_QUEUE, run);
+}
+
+/** Obliterate only the E2E logical DB operational queues. Never call with development URLs. */
 export async function obliterateE2eImportQueue(redisUrl: string): Promise<void> {
-  await withE2eImportQueue(redisUrl, async (queue) => {
+  const { IMPORT_PROCESSING_QUEUE } = await import(
+    '../../src/modules/import/processing/import-processing.queue.js'
+  );
+  const { WEBHOOK_DELIVERY_QUEUE } = await import(
+    '../../src/modules/webhook/delivery/webhook-delivery.queue.js'
+  );
+  await withE2eQueue(redisUrl, IMPORT_PROCESSING_QUEUE, async (queue) => {
+    await queue.obliterate({ force: true });
+  });
+  await withE2eQueue(redisUrl, WEBHOOK_DELIVERY_QUEUE, async (queue) => {
     await queue.obliterate({ force: true });
   });
 }

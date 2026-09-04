@@ -71,6 +71,9 @@ describe('e2e Redis isolation helpers', () => {
     expect(() =>
       assertIsolationProbeQueueName(IMPORT_PROCESSING_QUEUE),
     ).toThrow(/Isolation probe queue/);
+    expect(() => assertIsolationProbeQueueName('webhook-delivery')).toThrow(
+      /Isolation probe queue/,
+    );
   });
 
   describe('rethrowProbeTestAndCleanupErrors', () => {
