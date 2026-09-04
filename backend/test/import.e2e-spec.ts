@@ -873,6 +873,12 @@ describe('Import sessions (e2e)', () => {
     expect(response.body.paths['/api/v1/imports/{importId}/mapping']).toBeDefined();
     expect(response.body.paths['/api/v1/imports/{importId}/preview']).toBeDefined();
     expect(
+      response.body.paths['/api/v1/imports/{importId}/confirm'],
+    ).toBeDefined();
+    expect(
+      response.body.paths['/api/v1/imports/{importId}/rejected-rows'],
+    ).toBeDefined();
+    expect(
       response.body.paths['/api/v1/imports/{importId}/access-tokens'],
     ).toBeDefined();
     expect(
@@ -888,6 +894,10 @@ describe('Import sessions (e2e)', () => {
     expect(spec).toContain('IMPORT.MAPPING_INCOMPLETE');
     expect(spec).toContain('IMPORT.FILE_CHANGED');
     expect(spec).toContain('IMPORT.PREVIEW_UNAVAILABLE');
+    expect(spec).toContain('IMPORT.CONFIRMATION_NOT_ALLOWED');
+    expect(spec).toContain('IMPORT.PROCESSING_UNAVAILABLE');
+    expect(spec).toContain('IMPORT.SNAPSHOT_NOT_READY');
+    expect(spec).toContain('processing_failed');
     const createParams =
       response.body.paths['/api/v1/imports'].post.parameters ?? [];
     expect(
@@ -933,6 +943,11 @@ describe('Import sessions (e2e)', () => {
     expectApiKeyOrImportToken('/api/v1/imports/{importId}/mapping', 'get');
     expectApiKeyOrImportToken('/api/v1/imports/{importId}/mapping', 'put');
     expectApiKeyOrImportToken('/api/v1/imports/{importId}/preview', 'post');
+    expectApiKeyOrImportToken('/api/v1/imports/{importId}/confirm', 'post');
+    expectApiKeyOrImportToken(
+      '/api/v1/imports/{importId}/rejected-rows',
+      'get',
+    );
   });
 
   async function createUploadedSession(
