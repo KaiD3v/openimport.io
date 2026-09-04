@@ -64,6 +64,8 @@ model Organization {
   importRecords       ImportRecord[]
   importResultBatches ImportResultBatch[]
   importRecordResults ImportRecordResult[]
+  webhookEndpoints    WebhookEndpoint[]
+  webhookDeliveries   WebhookDelivery[]
 
   @@map("organizations")
 }
@@ -176,9 +178,10 @@ model ImportExecution {
 
   organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   importSession ImportSession        @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
-  records       ImportRecord[]
-  resultBatches ImportResultBatch[]
-  recordResults ImportRecordResult[]
+  records           ImportRecord[]
+  resultBatches     ImportResultBatch[]
+  recordResults     ImportRecordResult[]
+  webhookDeliveries WebhookDelivery[]
 
   @@unique([importSessionId, confirmationFingerprint], map: "uq_import_executions_session_fingerprint")
   @@index([organizationId, importSessionId], map: "idx_import_executions_org_session")
@@ -290,4 +293,60 @@ model ImportAccessToken {
   @@index([organizationId], map: "idx_import_access_tokens_organization_id")
   @@index([expiresAt], map: "idx_import_access_tokens_expires_at")
   @@map("import_access_tokens")
+}
+
+enum WebhookDeliveryStatus {
+  pending
+  delivered
+  failed
+
+  @@map("webhook_delivery_status")
+}
+
+model WebhookEndpoint {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  url              String   @db.VarChar(2048)
+  secretCiphertext String   @map("secret_ciphertext") @db.Text
+  secretPrefix     String   @map("secret_prefix") @db.VarChar(24)
+  eventType        String   @map("event_type") @db.VarChar(64)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@unique([organizationId, eventType], map: "uq_webhook_endpoints_organization_id_event_type")
+  @@index([organizationId, isActive], map: "idx_webhook_endpoints_organization_id_is_active")
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id              String                @id @default(uuid(7)) @db.Uuid
+  organizationId  String                @map("organization_id") @db.Uuid
+  endpointId      String                @map("endpoint_id") @db.Uuid
+  executionId     String                @map("execution_id") @db.Uuid
+  importSessionId String                @map("import_session_id") @db.Uuid
+  eventType       String                @map("event_type") @db.VarChar(64)
+  status          WebhookDeliveryStatus @default(pending)
+  destinationUrl  String                @map("destination_url") @db.VarChar(2048)
+  secretCiphertext String               @map("secret_ciphertext") @db.Text
+  payload         Json                  @db.JsonB
+  jobId           String                @unique(map: "uq_webhook_deliveries_job_id") @map("job_id") @db.VarChar(160)
+  attemptCount    Int                   @default(0) @map("attempt_count")
+  lastError       String?               @map("last_error") @db.VarChar(80)
+  deliveredAt     DateTime?             @map("delivered_at") @db.Timestamptz(6)
+  failedAt        DateTime?             @map("failed_at") @db.Timestamptz(6)
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+  execution     ImportExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, executionId, eventType], map: "uq_webhook_deliveries_org_execution_event_type")
+  @@index([organizationId, id], map: "idx_webhook_deliveries_organization_id_id")
+  @@index([status, createdAt, id], map: "idx_webhook_deliveries_status_created_at_id")
+  @@map("webhook_deliveries")
 }
