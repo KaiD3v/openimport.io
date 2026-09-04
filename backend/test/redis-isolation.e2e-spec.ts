@@ -1,95 +1,149 @@
 import { Queue } from 'bullmq';
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { IMPORT_PROCESSING_QUEUE } from '../src/modules/import/processing/import-processing.queue.js';
 import {
   assertE2eRedisUrl,
+  assertIsolationProbeQueueName,
+  createIsolationProbeQueueName,
   DEVELOPMENT_REDIS_URL,
   E2E_REDIS_DATABASE,
   E2E_REDIS_URL,
   forceE2eRedisEnv,
+  ISOLATION_PROBE_QUEUE_PREFIX,
   obliterateE2eImportQueue,
+  rethrowProbeTestAndCleanupErrors,
 } from './helpers/e2e-redis.js';
 
 const developmentRedisUrl = DEVELOPMENT_REDIS_URL;
 const e2eRedisUrl = E2E_REDIS_URL;
 
-describe('BullMQ Redis namespace isolation (e2e)', () => {
-  const queues: Queue[] = [];
-
-  afterAll(async () => {
-    await Promise.all(queues.map((queue) => queue.close()));
-  });
-
-  function openQueue(redisUrl: string): Queue {
-    const queue = new Queue(IMPORT_PROCESSING_QUEUE, {
-      connection: {
-        url: redisUrl,
-        maxRetriesPerRequest: null,
-      },
-    });
-    queues.push(queue);
-    return queue;
+async function disposeProbeQueues(
+  queues: Queue[],
+): Promise<void> {
+  const cleanupErrors: unknown[] = [];
+  for (const queue of queues) {
+    try {
+      await queue.obliterate({ force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      await queue.close();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
   }
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError(
+      cleanupErrors,
+      'Failed to clean exclusive isolation probe queues',
+    );
+  }
+}
 
+describe('BullMQ Redis namespace isolation (e2e)', () => {
   it('uses a dedicated E2E Redis database distinct from development', () => {
     expect(forceE2eRedisEnv()).toBe(E2E_REDIS_URL);
     expect(assertE2eRedisUrl(e2eRedisUrl)).toBe(E2E_REDIS_DATABASE);
     expect(e2eRedisUrl).not.toBe(developmentRedisUrl);
   });
 
-  it('keeps development and E2E queue jobs invisible to each other', async () => {
-    const local = openQueue(developmentRedisUrl);
-    const e2e = openQueue(e2eRedisUrl);
+  it('probes use an exclusive queue name, never the operational import queue', () => {
+    const probeQueueName = createIsolationProbeQueueName();
+    expect(probeQueueName).toMatch(
+      new RegExp(`^${ISOLATION_PROBE_QUEUE_PREFIX}-`),
+    );
+    expect(probeQueueName).not.toBe(IMPORT_PROCESSING_QUEUE);
+    expect(() => assertIsolationProbeQueueName(probeQueueName)).not.toThrow();
+    expect(() =>
+      assertIsolationProbeQueueName(IMPORT_PROCESSING_QUEUE),
+    ).toThrow(/Isolation probe queue/);
+  });
+
+  it('keeps exclusive-queue jobs on DB 0 and DB 15 invisible to each other', async () => {
+    const probeQueueName = createIsolationProbeQueueName();
+    assertIsolationProbeQueueName(probeQueueName);
+    expect(probeQueueName).not.toBe(IMPORT_PROCESSING_QUEUE);
+
+    const local = new Queue(probeQueueName, {
+      connection: { url: developmentRedisUrl, maxRetriesPerRequest: null },
+    });
+    const e2e = new Queue(probeQueueName, {
+      connection: { url: e2eRedisUrl, maxRetriesPerRequest: null },
+    });
+    const queues = [local, e2e];
+
     const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const localJobId = `isolation-local-${stamp}`;
     const e2eJobId = `isolation-e2e-${stamp}`;
 
-    await local.add(
-      'isolation-probe',
-      {
-        organizationId: '00000000-0000-4000-8000-000000000001',
-        importSessionId: '00000000-0000-4000-8000-000000000002',
-        executionId: '00000000-0000-4000-8000-000000000003',
-      },
-      { jobId: localJobId },
-    );
-    await e2e.add(
-      'isolation-probe',
-      {
-        organizationId: '00000000-0000-4000-8000-000000000004',
-        importSessionId: '00000000-0000-4000-8000-000000000005',
-        executionId: '00000000-0000-4000-8000-000000000006',
-      },
-      { jobId: e2eJobId },
-    );
+    let assertionError: unknown;
+    try {
+      await local.add('isolation-probe', { kind: 'local' }, { jobId: localJobId });
+      await e2e.add('isolation-probe', { kind: 'e2e' }, { jobId: e2eJobId });
 
-    expect(await e2e.getJob(localJobId)).toBeUndefined();
-    expect(await local.getJob(e2eJobId)).toBeUndefined();
-    expect(await local.getJob(localJobId)).not.toBeNull();
-    expect(await e2e.getJob(e2eJobId)).not.toBeNull();
+      expect(await e2e.getJob(localJobId)).toBeUndefined();
+      expect(await local.getJob(e2eJobId)).toBeUndefined();
+      expect(await local.getJob(localJobId)).not.toBeNull();
+      expect(await e2e.getJob(e2eJobId)).not.toBeNull();
+    } catch (error) {
+      assertionError = error;
+    }
 
-    await local.remove(localJobId);
-    await e2e.remove(e2eJobId);
+    let cleanupError: unknown;
+    try {
+      await disposeProbeQueues(queues);
+    } catch (error) {
+      cleanupError = error;
+    }
+
+    rethrowProbeTestAndCleanupErrors(assertionError, cleanupError);
   });
 
-  it('obliterates only the E2E queue and leaves the development probe intact', async () => {
-    const local = openQueue(developmentRedisUrl);
+  it('obliterating the exclusive probe queue on DB 15 leaves the DB 0 probe intact', async () => {
+    const probeQueueName = createIsolationProbeQueueName();
+    assertIsolationProbeQueueName(probeQueueName);
+    expect(probeQueueName).not.toBe(IMPORT_PROCESSING_QUEUE);
+
+    const local = new Queue(probeQueueName, {
+      connection: { url: developmentRedisUrl, maxRetriesPerRequest: null },
+    });
+    const e2e = new Queue(probeQueueName, {
+      connection: { url: e2eRedisUrl, maxRetriesPerRequest: null },
+    });
+    const queues = [local, e2e];
+
     const stamp = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const localJobId = `isolation-keep-local-${stamp}`;
+    const e2eJobId = `isolation-e2e-cleanup-${stamp}`;
 
-    await local.add(
-      'isolation-probe',
-      {
-        organizationId: '00000000-0000-4000-8000-000000000007',
-        importSessionId: '00000000-0000-4000-8000-000000000008',
-        executionId: '00000000-0000-4000-8000-000000000009',
-      },
-      { jobId: localJobId },
-    );
+    let assertionError: unknown;
+    try {
+      await local.add('isolation-probe', { kind: 'local' }, { jobId: localJobId });
+      await e2e.add('isolation-probe', { kind: 'e2e' }, { jobId: e2eJobId });
 
-    await obliterateE2eImportQueue(e2eRedisUrl);
+      // Destructive cleanup only on DB 15 exclusive probe queue — never DB 0,
+      // never the operational import-processing queue.
+      await e2e.obliterate({ force: true });
 
-    expect(await local.getJob(localJobId)).not.toBeNull();
-    await local.remove(localJobId);
+      expect(await local.getJob(localJobId)).not.toBeNull();
+      expect(await e2e.getJob(e2eJobId)).toBeUndefined();
+
+      // Operational E2E cleanup helper still refuses development URLs.
+      await expect(
+        obliterateE2eImportQueue(developmentRedisUrl),
+      ).rejects.toThrow(/database 15/i);
+    } catch (error) {
+      assertionError = error;
+    }
+
+    let cleanupError: unknown;
+    try {
+      await disposeProbeQueues(queues);
+    } catch (error) {
+      cleanupError = error;
+    }
+
+    rethrowProbeTestAndCleanupErrors(assertionError, cleanupError);
   });
 });

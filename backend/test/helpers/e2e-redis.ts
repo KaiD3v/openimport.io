@@ -6,6 +6,53 @@ export const DEVELOPMENT_REDIS_URL = 'redis://localhost:6379/0';
 export const DEVELOPMENT_REDIS_DATABASES = new Set<number>([0]);
 
 /**
+ * BullMQ queue used only by isolation probes. Never equals IMPORT_PROCESSING_QUEUE,
+ * so local start:prod / start:dev workers cannot consume these jobs.
+ * Note: BullMQ forbids `:` in queue names.
+ */
+export const ISOLATION_PROBE_QUEUE_PREFIX = 'openimport-test-isolation-probe';
+
+export function createIsolationProbeQueueName(): string {
+  const stamp = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${ISOLATION_PROBE_QUEUE_PREFIX}-${stamp}`;
+}
+
+export function assertIsolationProbeQueueName(queueName: string): void {
+  if (!queueName.startsWith(`${ISOLATION_PROBE_QUEUE_PREFIX}-`)) {
+    throw new Error(
+      `Isolation probe queue must start with ${ISOLATION_PROBE_QUEUE_PREFIX}-`,
+    );
+  }
+  if (queueName === 'import-processing') {
+    throw new Error(
+      'Isolation probe queue must not use the operational import-processing queue.',
+    );
+  }
+}
+
+/**
+ * After an isolation probe test body and its cleanup both finish, surface
+ * failures without dropping either. Single errors are rethrown as-is.
+ */
+export function rethrowProbeTestAndCleanupErrors(
+  assertionError: unknown,
+  cleanupError: unknown,
+): void {
+  if (assertionError != null && cleanupError != null) {
+    throw new AggregateError(
+      [assertionError, cleanupError],
+      'Isolation probe test and cleanup both failed',
+    );
+  }
+  if (assertionError != null) {
+    throw assertionError;
+  }
+  if (cleanupError != null) {
+    throw cleanupError;
+  }
+}
+
+/**
  * Pin E2E to Redis DB 15 even when the shell/.env exports a development REDIS_URL.
  * Vitest `test.env` does not overwrite existing process env vars.
  */
