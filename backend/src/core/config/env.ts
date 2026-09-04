@@ -164,6 +164,13 @@ export const envSchema = z
       .max(200)
       .default(25),
     WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS: envBool,
+    HEALTH_PROBE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .min(100)
+      .max(10_000)
+      .default(2_000),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production' && env.ALLOWED_ORIGINS.includes('*')) {

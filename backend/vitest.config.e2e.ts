@@ -48,6 +48,7 @@ export default defineConfig({
       WEBHOOK_JOB_RECONCILE_INTERVAL_MS: '60000',
       WEBHOOK_JOB_RECONCILE_BATCH_SIZE: '10',
       WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS: 'true',
+      HEALTH_PROBE_TIMEOUT_MS: '2000',
     },
     globalSetup: ['./test/global-setup.ts'],
   },

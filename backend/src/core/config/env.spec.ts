@@ -113,4 +113,17 @@ describe('loadEnv', () => {
       expect(message).not.toContain('supersecret-not-hex');
     }
   });
+
+  it('defaults and bounds HEALTH_PROBE_TIMEOUT_MS', () => {
+    Object.assign(process.env, REQUIRED);
+    delete process.env.HEALTH_PROBE_TIMEOUT_MS;
+
+    expect(loadEnv().HEALTH_PROBE_TIMEOUT_MS).toBe(2000);
+
+    process.env.HEALTH_PROBE_TIMEOUT_MS = '50';
+    expect(() => loadEnv()).toThrow(/HEALTH_PROBE_TIMEOUT_MS/);
+
+    process.env.HEALTH_PROBE_TIMEOUT_MS = '20000';
+    expect(() => loadEnv()).toThrow(/HEALTH_PROBE_TIMEOUT_MS/);
+  });
 });
