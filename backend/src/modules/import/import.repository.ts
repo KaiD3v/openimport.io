@@ -8,6 +8,7 @@ import {
 import type {
   CreateExecutionData,
   CreateImportSessionData,
+  FileRetentionCandidate,
   ImportExecutionRecord,
   ImportMappingPairRecord,
   ImportRecordResultWrite,
@@ -772,5 +773,182 @@ export class ImportRepository {
       pending,
       isComplete: pending === 0,
     };
+  }
+
+  async listFileRetentionCandidates(params: {
+    limit: number;
+    retentionHours: number;
+    claimTtlMs: number;
+    now?: Date;
+    after?: { finishedAt: Date; id: string } | null;
+  }): Promise<FileRetentionCandidate[]> {
+    const now = params.now ?? new Date();
+    const cutoff = new Date(
+      now.getTime() - params.retentionHours * 60 * 60 * 1000,
+    );
+    const claimExpiredBefore = new Date(now.getTime() - params.claimTtlMs);
+    const after = params.after ?? null;
+
+    const sessionRetentionFilter: Prisma.ImportSessionWhereInput = {
+      storageObjectKey: { not: null },
+      storageDeletedAt: null,
+      OR: [
+        { storageCleanupClaimedAt: null },
+        { storageCleanupClaimedAt: { lt: claimExpiredBefore } },
+      ],
+    };
+
+    const rows = await this.prisma.importExecution.findMany({
+      where: {
+        finishedAt: { not: null, lte: cutoff },
+        AND: [
+          ...(after
+            ? [
+                {
+                  OR: [
+                    { finishedAt: { gt: after.finishedAt } },
+                    {
+                      finishedAt: after.finishedAt,
+                      importSessionId: { gt: after.id },
+                    },
+                  ],
+                } satisfies Prisma.ImportExecutionWhereInput,
+              ]
+            : []),
+          {
+            OR: [
+              {
+                status: 'ready',
+                importSession: {
+                  ...sessionRetentionFilter,
+                  status: 'ready',
+                },
+              },
+              {
+                status: 'failed',
+                importSession: {
+                  ...sessionRetentionFilter,
+                  status: 'processing_failed',
+                },
+              },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ finishedAt: 'asc' }, { importSessionId: 'asc' }],
+      take: params.limit,
+      select: {
+        finishedAt: true,
+        importSession: {
+          select: {
+            id: true,
+            organizationId: true,
+            status: true,
+            storageObjectKey: true,
+          },
+        },
+      },
+    });
+
+    return rows.flatMap((row) => {
+      const key = row.importSession.storageObjectKey;
+      const finishedAt = row.finishedAt;
+      if (!key || !finishedAt) {
+        return [];
+      }
+      return [
+        {
+          id: row.importSession.id,
+          organizationId: row.importSession.organizationId,
+          status: row.importSession.status,
+          storageObjectKey: key,
+          finishedAt,
+        },
+      ];
+    });
+  }
+
+  async claimFileRetentionCandidate(
+    sessionId: string,
+    claimToken: string,
+    now: Date,
+    claimTtlMs: number,
+  ): Promise<{ claimed: boolean; storageObjectKey: string | null }> {
+    const claimExpiredBefore = new Date(now.getTime() - claimTtlMs);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.importSession.updateMany({
+        where: {
+          id: sessionId,
+          status: { in: ['ready', 'processing_failed'] },
+          storageObjectKey: { not: null },
+          storageDeletedAt: null,
+          OR: [
+            { storageCleanupClaimedAt: null },
+            { storageCleanupClaimedAt: { lt: claimExpiredBefore } },
+          ],
+        },
+        data: {
+          storageCleanupClaimedAt: now,
+          storageCleanupClaimToken: claimToken,
+        },
+      });
+
+      if (updated.count !== 1) {
+        return { claimed: false, storageObjectKey: null };
+      }
+
+      const session = await tx.importSession.findUnique({
+        where: { id: sessionId },
+        select: { storageObjectKey: true },
+      });
+
+      return {
+        claimed: true,
+        storageObjectKey: session?.storageObjectKey ?? null,
+      };
+    });
+  }
+
+  async completeFileRetentionCleanup(
+    sessionId: string,
+    input: {
+      expectedKey: string;
+      claimToken: string;
+      deletedAt: Date;
+    },
+  ): Promise<boolean> {
+    const updated = await this.prisma.importSession.updateMany({
+      where: {
+        id: sessionId,
+        storageObjectKey: input.expectedKey,
+        storageCleanupClaimToken: input.claimToken,
+        storageDeletedAt: null,
+      },
+      data: {
+        storageDeletedAt: input.deletedAt,
+        storageObjectKey: null,
+        storageCleanupClaimedAt: null,
+        storageCleanupClaimToken: null,
+      },
+    });
+    return updated.count === 1;
+  }
+
+  async releaseFileRetentionClaim(
+    sessionId: string,
+    claimToken: string,
+  ): Promise<void> {
+    await this.prisma.importSession.updateMany({
+      where: {
+        id: sessionId,
+        storageCleanupClaimToken: claimToken,
+        storageDeletedAt: null,
+      },
+      data: {
+        storageCleanupClaimedAt: null,
+        storageCleanupClaimToken: null,
+      },
+    });
   }
 }

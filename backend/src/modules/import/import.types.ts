@@ -30,6 +30,9 @@ export type ImportSessionRecord = {
   delimiter: string | null;
   dataRowCount: number | null;
   storageObjectKey: string | null;
+  storageDeletedAt: Date | null;
+  storageCleanupClaimedAt: Date | null;
+  storageCleanupClaimToken: string | null;
   mapping: ImportMappingPairRecord[] | unknown;
   mappingRevision: number;
   uploadedAt: Date | null;
@@ -37,6 +40,14 @@ export type ImportSessionRecord = {
   createdAt: Date;
   updatedAt: Date;
   columns: ImportColumnRecord[];
+};
+
+export type FileRetentionCandidate = {
+  id: string;
+  organizationId: string;
+  status: ImportSessionStatus;
+  storageObjectKey: string;
+  finishedAt: Date;
 };
 
 export type CreateImportSessionData = {
