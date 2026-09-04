@@ -33,6 +33,12 @@ node -e "console.log('oi_live_'+require('crypto').randomBytes(32).toString('hex'
 
 A chave precisa ser `oi_live_` seguido de exatamente 64 caracteres hexadecimais minúsculos (`0-9`, `a-f`). O seed armazena apenas SHA-256 e um prefixo diagnóstico.
 
+Gere também `WEBHOOK_SECRET_ENCRYPTION_KEY` (64 hex minúsculos) no `.env`. Ela cifra o segredo de assinatura do webhook em repouso e não deve ser logada:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
 ## Subir o ambiente
 
 PowerShell:

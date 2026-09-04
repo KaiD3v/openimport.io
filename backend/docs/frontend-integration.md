@@ -21,7 +21,7 @@ Para o frontend, o backend da organização emite um token de importação (`oi_
 
 O token vale só para o `importId` vinculado. Outra sessão da mesma organização responde `404 IMPORT.NOT_FOUND`. Criar sessão, emitir outro token ou acessar templates com o token responde `403 AUTH.INSUFFICIENT_SCOPE`. Token expirado, revogado, desconhecido ou cuja API key emissora esteja revogada responde `401 AUTH.INVALID_IMPORT_TOKEN` sem detalhar o motivo.
 
-Não há endpoints de listagem/histórico, cancelamento nem webhook. Não há endpoint público de revogação; `revokedAt` é considerado na validação.
+Não há endpoints de listagem/histórico nem cancelamento. O webhook `import.ready` é cadastrado só com API key no backend da organização (`PUT /webhook-endpoints`); o frontend continua a fazer poll em `GET /imports/:importId`. Não há endpoint público de revogação; `revokedAt` é considerado na validação.
 
 ## Recomendações para a interface
 

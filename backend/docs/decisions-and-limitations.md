@@ -11,20 +11,21 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 | Revisão otimista do mapping | `expectedRevision` protege substituição concorrente; no-op não incrementa. |
 | Preview síncrono e não persistido | Releitura completa acontece na requisição; não grava rows. |
 | Confirmação idempotente + worker | `POST .../confirm` CAS + BullMQ; snapshot só em `ready`. |
+| Webhook `import.ready` assinado | Outbox na txn de ready + snapshot autocontido (URL, payload, ciphertext); HTTP pinado (um DNS por tentativa); HMAC-SHA256; PUT/DELETE só no futuro. |
 | Perfil monetário explícito | `pt-BR-v1` transforma unidades em centavos e evita inferência de locale. |
 | Limites separados | Bytes, rows, columns, fields, records, batch de persistência e resposta de preview têm controles distintos. |
 | Parser sem API privada | Streaming usa componentes públicos e `csv-parse`, com scanner/coalescedor próprio. |
 
 ## Limitações conhecidas
 
-Não há listagem, histórico, webhook `import.ready`, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada ou readiness de storage/Redis.
+Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada, dashboard de webhooks/multi-evento nem readiness de storage/Redis.
 
 ## Próximos passos possíveis, não comprometidos
 
 - Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e rate limiting.
-- Webhook `import.ready` assinado.
 - DLQ/bull-board e processo worker dedicado.
 - Retenção, exclusão, observabilidade e readiness abrangendo storage/Redis.
 - Listagem/histórico, XLSX e perfis de normalização adicionais.
+- Webhooks genéricos além de `import.ready`, dashboard de deliveries, retry manual por HTTP e DLQ administrativa.
 
 Consulte [Arquitetura](architecture.md) e [Segurança e operação](security-and-operations.md) antes de transformar qualquer item em contrato.

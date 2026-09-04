@@ -221,6 +221,71 @@ Resumo agregado calculado no servidor (não confia em contadores do cliente):
 - `isComplete` significa que todos os válidos receberam resultado do cliente — **não** muda o status da sessão.
 - Sem payloads normalizados. `Cache-Control: no-store`. Somente API key.
 
+## Webhook `import.ready`
+
+Cadastro **somente com API key**. Token `oi_import_` recebe `403 AUTH.INSUFFICIENT_SCOPE`. Há no máximo um endpoint ativo por organização para `import.ready`. O poll `GET /imports/:id` permanece válido e independente da entrega HTTP.
+
+### `PUT /webhook-endpoints`
+
+Cria ou substitui o endpoint e **rotaciona o segredo** (revelado só nesta resposta). `Cache-Control: no-store`. Afeta **somente eventos futuros**: deliveries já criadas continuam com o snapshot original (URL, payload e ciphertext do segredo) e não passam a usar o destino/segredo novos.
+
+```json
+{"url":"https://hooks.example.com/openimport/import-ready"}
+```
+
+```json
+{"id":"<uuid>","url":"https://hooks.example.com/openimport/import-ready","eventType":"import.ready","isActive":true,"secretPrefix":"oi_whsec_aaaaaaa","secret":"oi_whsec_<64 hex>","createdAt":"<iso>","updatedAt":"<iso>"}
+```
+
+`url` deve ser HTTPS absoluta (em produção). Loopback, IPs privados, link-local, metadata e credenciais na URL são rejeitados (`422 WEBHOOK.URL_UNSAFE`). Outros: `400 VALIDATION.FAILED`, `401`, `403 AUTH.INSUFFICIENT_SCOPE`.
+
+### `GET /webhook-endpoints`
+
+Retorna o endpoint corrente **sem** `secret`, ou `404 WEBHOOK.ENDPOINT_NOT_FOUND`.
+
+### `DELETE /webhook-endpoints`
+
+Desativa (`isActive: false`). Ready continua a funcionar; **novas** execuções não geram delivery. Deliveries já persistidas seguem o snapshot original até `delivered` ou `failed`. `404` se nunca existiu.
+
+### Entrega
+
+Quando o CAS de ready é bem-sucedido e existe endpoint ativo, o backend grava `webhook_deliveries` pending **na mesma transação** (cópia autocontida de URL, payload e ciphertext do segredo do endpoint ativo naquele instante) e enfileira `webhook-delivery` após o commit. Sem endpoint ativo: ready ok, zero deliveries. Falha de enqueue **não** altera `ready`; o reconciliador republica só quando existir job BullMQ processável. Destino fora do ar: delivery `failed` após retries; a sessão permanece `ready`.
+
+POST JSON:
+
+```json
+{
+  "id": "<delivery uuid>",
+  "type": "import.ready",
+  "createdAt": "<ISO-8601>",
+  "data": {
+    "organizationId": "<uuid>",
+    "importId": "<uuid>",
+    "executionId": "<uuid>",
+    "status": "ready",
+    "counts": { "totalRows": 2, "validRows": 1, "invalidRows": 1, "processedRows": 2 }
+  }
+}
+```
+
+Headers:
+
+- `OpenImport-Timestamp`: unix seconds
+- `OpenImport-Signature`: `v1=<hmac_sha256_hex>`
+- `OpenImport-Idempotency-Key`: igual a `id`
+
+`signed_payload = `${timestamp}.${rawBody}``; HMAC-SHA256 com o **segredo do snapshot da delivery** (não o segredo corrente do endpoint após PUT). O mesmo `id` é reenviado em retries; o timestamp e a assinatura são por tentativa.
+
+### Verificação no consumidor
+
+1. Ler o body **cru** (não re-serializar JSON).
+2. Calcular `HMAC-SHA256(secret, `${timestamp}.${rawBody}`)` em hex e comparar com `v1=...` usando `crypto.timingSafeEqual` (buffers do mesmo tamanho).
+3. Rejeitar se `|now - timestamp| > 300` segundos.
+4. Deduplicar por `id` (e opcionalmente por `(executionId, type)`).
+5. Responder `2xx` após persistir o dedupe. `4xx` estáveis fazem a delivery falhar; `408`/`429`/`5xx` são retentados.
+
+O payload não contém CSV, storage keys, API keys, tokens nem `Authorization`. Contagens são as do snapshot `ready`; para linhas, use `GET /imports/:id/valid-rows`.
+
 ## Walkthrough reproduzível
 
 Com API local e `API_KEY` privado configurado, a partir de `backend/`, use os arquivos em [`examples/`](examples/). No PowerShell:

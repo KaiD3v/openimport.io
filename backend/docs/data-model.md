@@ -9,10 +9,14 @@ Organization 1--* ImportSession *--1 ImportTemplate
 Organization 1--* ImportAccessToken
 Organization 1--* ImportExecution
 Organization 1--* ImportRecord
+Organization 1--1 WebhookEndpoint (por event_type)
+Organization 1--* WebhookDelivery
 ApiKey 1--* ImportAccessToken
 ImportSession 1--* ImportColumn
 ImportSession 1--* ImportAccessToken
 ImportSession 1--* ImportExecution 1--* ImportRecord
+ImportExecution 1--* WebhookDelivery
+WebhookEndpoint 1--* WebhookDelivery
 ```
 
 IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAccessToken.issuerApiKeyId` usa `onDelete: Restrict`; as relações de organização, fields, columns, tokens, executions e records usam cascade.
@@ -27,6 +31,8 @@ IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAc
 | `ImportColumn` | nome e posição de header após upload |
 | `ImportExecution` | fingerprint de confirmação, revisão/hash congelados, `jobId`, progresso, status da tentativa |
 | `ImportRecord` | `recordNumber`, `valid`/`invalid`, `payload` JSON (válido) ou `errors` JSON (inválido) |
+| `WebhookEndpoint` | URL HTTPS, `eventType` (`import.ready`), segredo cifrado (AES-256-GCM), prefixo diagnóstico, `isActive`; no máximo um por `(organizationId, eventType)` |
+| `WebhookDelivery` | outbox `import.ready`: payload mínimo, URL congelada, `jobId`, status `pending`/`delivered`/`failed`; único por `(organizationId, executionId, eventType)` |
 
 ## Unicidade e índices
 
@@ -38,8 +44,10 @@ IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAc
 - Coluna: `(importSessionId, position)` e `(importSessionId, name)` únicos, além de índice por sessão.
 - Execução: `(importSessionId, confirmationFingerprint)` único; `jobId` único.
 - Registro: `(executionId, recordNumber)` único; queries sempre filtradas por `organizationId`.
+- Webhook endpoint: `(organizationId, eventType)` único.
+- Webhook delivery: `(organizationId, executionId, eventType)` único; `jobId` único; `secretCiphertext` é snapshot obrigatório (cópia do ciphertext do endpoint ativo no outbox).
 
-Migrations versionadas incluem `20260903214207_import_confirm_processing`.
+Migrations versionadas incluem `20260904072000_webhook_import_ready` e `20260904184500_webhook_delivery_secret_snapshot` (coluna `secret_ciphertext` na delivery, backfill a partir do endpoint associado, depois `NOT NULL`).
 
 ## Status da sessão
 
@@ -61,6 +69,8 @@ Em `uploaded`, mapping e preview são permitidos. Após `queued`, mapping e prev
 Registros parcialmente escritos de uma execução falha **não** formam snapshot pronto: `GET .../rejected-rows` e `GET .../valid-rows` exigem `ready`. `valid-rows` usa o índice `(organizationId, importSessionId, classification, recordNumber)` com filtro adicional por `executionId`.
 
 Resultados do cliente (`ImportResultBatch` / `ImportRecordResult`) vinculam-se à execução `ready`. A chave idempotente do lote é guardada só como hash; o resultado final por `(executionId, recordNumber)` é único e não sobrescrevível. `isComplete` no resumo significa `pending === 0` e **não** altera o status `ready` da sessão.
+
+O webhook `import.ready` é outbox: a delivery pending nasce na mesma transação do CAS de ready se existir endpoint ativo, com snapshot autocontido de URL, payload e ciphertext do segredo; sem endpoint ativo, ready continua válido e nenhuma delivery é criada. PUT cria o endpoint com AAD `organizationId:endpointId` correspondente ao ID persistido, ou, em disputa da unique `(organizationId, eventType)`, lê o vencedor e só então rotaciona com o ID real — nenhum statement commitado grava ciphertext de outro ID. PUT/DELETE do endpoint afetam só eventos **futuros**. Falha HTTP após retries marca a delivery `failed` e **não** reverte `ready`.
 
 ## Idempotência e revisão
 

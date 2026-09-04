@@ -12,7 +12,7 @@ npm run test:e2e
 
 `npm test` roda unitários Vitest e não usa banco. `npm run test:e2e` usa `openimport_test`, Redis logical DB **15** (isolado do backend local em DB **0**), aplica migrations no setup, oblitera só a fila E2E antes/depois, usa Postgres/MinIO/Redis do Compose e cria organização/API key isoladas por caso. Pode executar com `start:prod` ativo. Execute `npm run typecheck` e depois `npm run build` sequencialmente: ambos rodam `prisma generate`.
 
-As fixtures E2E são isoladas por tenant. Regressões cobertas incluem BOM/UTF-8, CRLF fragmentado, aspas, limites, cleanup, idempotência, revisão concorrente, amostra/orçamento, integridade do arquivo e normalização monetária.
+As fixtures E2E são isoladas por tenant. Regressões cobertas incluem BOM/UTF-8, CRLF fragmentado, aspas, limites, cleanup, idempotência, revisão concorrente, amostra/orçamento, integridade do arquivo, normalização monetária e webhook `import.ready` (receptor HTTP local, rotação PUT, DELETE com delivery pendente e isolamento entre organizações).
 
 | Sintoma E2E | Verifique | Ação segura |
 | --- | --- | --- |
