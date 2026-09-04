@@ -58,6 +58,7 @@ function session(csv: Buffer, dataRowCount: number): ImportSessionRecord {
     ],
     mappingRevision: 1,
     uploadedAt: now,
+    confirmedAt: null,
     createdAt: now,
     updatedAt: now,
     columns: [

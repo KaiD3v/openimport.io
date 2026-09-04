@@ -1,15 +1,47 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ObjectStorageModule } from '../../integrations/object-storage/object-storage.module.js';
+import { ENV } from '../../core/config/env.token.js';
+import type { Env } from '../../core/config/env.js';
 import { TemplateModule } from '../template/index.js';
+import { ConfirmService } from './confirm/confirm.service.js';
 import { ImportController } from './import.controller.js';
 import { ImportRepository } from './import.repository.js';
 import { ImportService } from './import.service.js';
 import { PreviewService } from './preview/preview.service.js';
+import { IMPORT_PROCESSING_QUEUE } from './processing/import-processing.queue.js';
+import { ImportProcessingJobPublisher } from './processing/ensure-processable-job.js';
+import { ImportProcessingReconciler } from './processing/import-processing.reconciler.js';
+import { ImportProcessingWorker } from './processing/import-processing.worker.js';
+import { RejectedRowsService } from './processing/rejected-rows.service.js';
 
 @Module({
-  imports: [TemplateModule, ObjectStorageModule],
+  imports: [
+    TemplateModule,
+    ObjectStorageModule,
+    BullModule.forRootAsync({
+      inject: [ENV],
+      useFactory: (env: Env) => ({
+        connection: {
+          url: env.REDIS_URL,
+        },
+      }),
+    }),
+    BullModule.registerQueue({
+      name: IMPORT_PROCESSING_QUEUE,
+    }),
+  ],
   controllers: [ImportController],
-  providers: [ImportService, PreviewService, ImportRepository],
-  exports: [ImportService],
+  providers: [
+    ImportService,
+    PreviewService,
+    ConfirmService,
+    RejectedRowsService,
+    ImportRepository,
+    ImportProcessingJobPublisher,
+    ImportProcessingWorker,
+    ImportProcessingReconciler,
+  ],
+  exports: [ImportService, ImportProcessingReconciler],
 })
 export class ImportModule {}

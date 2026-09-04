@@ -1,4 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ImportFailureDto,
+  ImportProgressDto,
+} from './confirm-import-response.dto.js';
 
 export class ImportColumnResponseDto {
   @ApiProperty({ example: 'sku' })
@@ -16,10 +20,25 @@ export class ImportSessionResponseDto {
   templateId!: string;
 
   @ApiProperty({
-    enum: ['created', 'uploaded', 'upload_failed'],
+    enum: [
+      'created',
+      'uploaded',
+      'queued',
+      'processing',
+      'ready',
+      'processing_failed',
+      'upload_failed',
+    ],
     example: 'created',
   })
-  status!: 'created' | 'uploaded' | 'upload_failed';
+  status!:
+    | 'created'
+    | 'uploaded'
+    | 'queued'
+    | 'processing'
+    | 'ready'
+    | 'processing_failed'
+    | 'upload_failed';
 
   @ApiPropertyOptional({ example: 'products.csv', nullable: true })
   originalFilename!: string | null;
@@ -46,10 +65,39 @@ export class ImportSessionResponseDto {
   columns!: ImportColumnResponseDto[];
 
   @ApiPropertyOptional({
+    type: ImportProgressDto,
+    nullable: true,
+    description:
+      'Present after confirmation. totalRows may be null — do not invent percentages.',
+  })
+  progress!: ImportProgressDto | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Current processing execution after confirmation.',
+  })
+  executionId!: string | null;
+
+  @ApiPropertyOptional({
+    type: ImportFailureDto,
+    nullable: true,
+    description:
+      'Public failure details when status is processing_failed; otherwise null.',
+  })
+  failure!: ImportFailureDto | null;
+
+  @ApiPropertyOptional({
     example: '2026-09-02T12:00:00.000Z',
     nullable: true,
   })
   uploadedAt!: string | null;
+
+  @ApiPropertyOptional({
+    example: '2026-09-02T12:05:00.000Z',
+    nullable: true,
+  })
+  confirmedAt!: string | null;
 
   @ApiProperty({ example: '2026-09-02T12:00:00.000Z' })
   createdAt!: string;

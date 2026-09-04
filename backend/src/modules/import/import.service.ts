@@ -59,6 +59,7 @@ import {
   MultipartFileError,
   readMultipartFile,
 } from './multipart-file.js';
+import { toPublicProcessingFailure } from './processing/public-processing-failure.js';
 import {
   assertCanManageMapping,
   assertCanUpload,
@@ -176,7 +177,7 @@ export class ImportService {
         message: 'Import session not found.',
       });
     }
-    return this.toResponse(session);
+    return this.toResponseWithProgress(session);
   }
 
   async createAccessToken(
@@ -215,7 +216,7 @@ export class ImportService {
       session.templateId,
     );
     return {
-      import: this.toResponse(session),
+      import: await this.toResponseWithProgress(session),
       template: {
         id: template.id,
         name: template.name,
@@ -584,7 +585,42 @@ export class ImportService {
     );
   }
 
-  private toResponse(session: ImportSessionRecord): ImportSessionResponseDto {
+  private async toResponseWithProgress(
+    session: ImportSessionRecord,
+  ): Promise<ImportSessionResponseDto> {
+    const execution = await this.imports.findLatestExecution(
+      session.organizationId,
+      session.id,
+    );
+    if (!execution) {
+      return this.toResponse(session);
+    }
+    return this.toResponse(session, {
+      executionId: execution.id,
+      progress: {
+        processedRows: execution.processedRows,
+        totalRows: execution.totalRows,
+        validRows: execution.validRows,
+        invalidRows: execution.invalidRows,
+      },
+      failure:
+        session.status === 'processing_failed'
+          ? toPublicProcessingFailure(
+              execution.errorCode,
+              execution.errorMessage,
+            )
+          : null,
+    });
+  }
+
+  private toResponse(
+    session: ImportSessionRecord,
+    extras?: {
+      progress?: ImportSessionResponseDto['progress'];
+      executionId?: string | null;
+      failure?: ImportSessionResponseDto['failure'];
+    },
+  ): ImportSessionResponseDto {
     return {
       id: session.id,
       templateId: session.templateId,
@@ -599,7 +635,11 @@ export class ImportService {
         name: column.name,
         position: column.position,
       })),
+      progress: extras?.progress ?? null,
+      executionId: extras?.executionId ?? null,
+      failure: extras?.failure ?? null,
       uploadedAt: session.uploadedAt?.toISOString() ?? null,
+      confirmedAt: session.confirmedAt?.toISOString() ?? null,
       createdAt: session.createdAt.toISOString(),
       updatedAt: session.updatedAt.toISOString(),
     };

@@ -11,6 +11,7 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  Query,
   Req,
 } from '@nestjs/common';
 import {
@@ -20,6 +21,7 @@ import {
   ApiHeader,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
   getSchemaPath,
@@ -35,6 +37,12 @@ import { AllowImportAccessToken } from '../../core/auth/allow-import-access-toke
 import { ApiKeyOnlyAuth } from '../../core/auth/openapi-auth.decorators.js';
 import { CurrentOrganization } from '../../core/auth/current-organization.decorator.js';
 import type { AuthenticatedOrganization } from '../../core/auth/authenticated-organization.js';
+import { resolveRequestId } from '../../common/http/request-id.js';
+import { ConfirmImportDto } from './dto/confirm-import.dto.js';
+import {
+  ConfirmImportResponseDto,
+  RejectedRowsResponseDto,
+} from './dto/confirm-import-response.dto.js';
 import { CreateImportSessionDto } from './dto/create-import-session.dto.js';
 import { CreateImportPreviewDto } from './dto/create-import-preview.dto.js';
 import { CreateImportAccessTokenDto } from './dto/create-import-access-token.dto.js';
@@ -43,8 +51,10 @@ import { ImportContextResponseDto } from './dto/import-context-response.dto.js';
 import { ImportMappingResponseDto } from './dto/import-mapping-response.dto.js';
 import { ImportPreviewResponseDto } from './dto/import-preview-response.dto.js';
 import { ImportSessionResponseDto } from './dto/import-session-response.dto.js';
+import { ListRejectedRowsQueryDto } from './dto/list-rejected-rows-query.dto.js';
 import {
   IdempotencyKeyReusedErrorDto,
+  ImportConfirmationNotAllowedErrorDto,
   ImportFileAlreadyUploadedErrorDto,
   ImportFileChangedErrorDto,
   ImportFileTooLargeErrorDto,
@@ -56,12 +66,16 @@ import {
   ImportNotFoundErrorDto,
   ImportPreviewNotAllowedErrorDto,
   ImportPreviewUnavailableErrorDto,
+  ImportProcessingUnavailableErrorDto,
+  ImportSnapshotNotReadyErrorDto,
   ImportUploadNotAllowedErrorDto,
   TemplateNotFoundErrorDto,
 } from './dto/import-error-response.dto.js';
 import { PutImportMappingDto } from './dto/put-import-mapping.dto.js';
+import { ConfirmService } from './confirm/confirm.service.js';
 import { ImportService } from './import.service.js';
 import { PreviewService } from './preview/preview.service.js';
+import { RejectedRowsService } from './processing/rejected-rows.service.js';
 
 const importIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
@@ -87,12 +101,17 @@ const importIdPipe = new ParseUUIDPipe({
   ImportMappingIncompleteErrorDto,
   ImportFileChangedErrorDto,
   ImportPreviewUnavailableErrorDto,
+  ImportConfirmationNotAllowedErrorDto,
+  ImportProcessingUnavailableErrorDto,
+  ImportSnapshotNotReadyErrorDto,
 )
 @Controller('imports')
 export class ImportController {
   constructor(
     private readonly imports: ImportService,
     private readonly previews: PreviewService,
+    private readonly confirms: ConfirmService,
+    private readonly rejectedRows: RejectedRowsService,
   ) {}
 
   @Post()
@@ -277,6 +296,76 @@ export class ImportController {
     @Body() dto: CreateImportPreviewDto,
   ): Promise<ImportPreviewResponseDto> {
     return this.previews.preview(organization.organizationId, importId, dto);
+  }
+
+  @Post(':importId/confirm')
+  @AllowImportAccessToken()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'Confirm an uploaded import (idempotent). Freezes mapping and file, enqueues async processing, returns quickly.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiResponse({ status: 202, type: ConfirmImportResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({
+    status: 409,
+    description:
+      'IMPORT.CONFIRMATION_NOT_ALLOWED, IMPORT.MAPPING_INCOMPLETE, IMPORT.MAPPING_REVISION_CONFLICT, or IMPORT.FILE_CHANGED.',
+    content: {
+      'application/json': {
+        schema: {
+          oneOf: [
+            { $ref: getSchemaPath(ImportConfirmationNotAllowedErrorDto) },
+            { $ref: getSchemaPath(ImportMappingIncompleteErrorDto) },
+            { $ref: getSchemaPath(ImportMappingRevisionConflictErrorDto) },
+            { $ref: getSchemaPath(ImportFileChangedErrorDto) },
+          ],
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 503, type: ImportProcessingUnavailableErrorDto })
+  confirm(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Body() dto: ConfirmImportDto,
+    @Req() req: Request,
+  ): Promise<ConfirmImportResponseDto> {
+    return this.confirms.confirm(
+      organization.organizationId,
+      importId,
+      dto,
+      String(resolveRequestId(req)),
+    );
+  }
+
+  @Get(':importId/rejected-rows')
+  @AllowImportAccessToken()
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'List invalid records from the ready snapshot (cursor pagination). Does not return raw CSV cells or normalized payloads.',
+  })
+  @ApiParam({ name: 'importId', format: 'uuid' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'after', required: false, type: String })
+  @ApiResponse({ status: 200, type: RejectedRowsResponseDto })
+  @ApiResponse({ status: 400, type: ValidationFailedErrorDto })
+  @ApiResponse({ status: 401, type: UnauthorizedErrorDto })
+  @ApiResponse({ status: 403, type: ForbiddenErrorDto })
+  @ApiResponse({ status: 404, type: ImportNotFoundErrorDto })
+  @ApiResponse({ status: 409, type: ImportSnapshotNotReadyErrorDto })
+  listRejectedRows(
+    @CurrentOrganization() organization: AuthenticatedOrganization,
+    @Param('importId', importIdPipe) importId: string,
+    @Query() query: ListRejectedRowsQueryDto,
+  ): Promise<RejectedRowsResponseDto> {
+    return this.rejectedRows.list(organization.organizationId, importId, query);
   }
 
   @Post(':importId/file')

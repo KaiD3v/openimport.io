@@ -76,6 +76,7 @@ function uploadedSession(
     ],
     mappingRevision: 1,
     uploadedAt: now,
+    confirmedAt: null,
     createdAt: now,
     updatedAt: now,
     columns: [

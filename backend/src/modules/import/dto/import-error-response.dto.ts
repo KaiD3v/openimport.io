@@ -223,3 +223,52 @@ export class ImportPreviewUnavailableErrorDto {
   @ApiProperty({ example: TRACE_ID_EXAMPLE })
   traceId!: string;
 }
+
+export class ImportConfirmationNotAllowedErrorDto {
+  @ApiProperty({ example: 'IMPORT.CONFIRMATION_NOT_ALLOWED' })
+  code!: string;
+
+  @ApiProperty({
+    example:
+      'Confirmation is only available for uploaded sessions with a complete mapping.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportProcessingUnavailableErrorDto {
+  @ApiProperty({ example: 'IMPORT.PROCESSING_UNAVAILABLE' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'Import processing queue is temporarily unavailable.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
+export class ImportSnapshotNotReadyErrorDto {
+  @ApiProperty({ example: 'IMPORT.SNAPSHOT_NOT_READY' })
+  code!: string;
+
+  @ApiProperty({
+    example: 'Rejected rows are available only after processing completes.',
+  })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
