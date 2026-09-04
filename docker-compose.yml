@@ -49,6 +49,21 @@ services:
         mc mb --ignore-existing local/openimport
         exit 0
 
+  redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - openimport_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   openimport_postgres:
   openimport_minio:
+  openimport_redis:
