@@ -12,7 +12,7 @@ describe('public pages without embed config', () => {
     ).toBeInTheDocument()
     expect(screen.getByLabelText(/transformação visual/i)).toBeInTheDocument()
     expect(screen.getAllByText(/priceInCents/i).length).toBeGreaterThan(0)
-    expect(screen.getByText(/termina no preview/i)).toBeInTheDocument()
+    expect(screen.getByText(/valid-rows/i)).toBeInTheDocument()
   })
 
   it('renders a dedicated 404 page', () => {

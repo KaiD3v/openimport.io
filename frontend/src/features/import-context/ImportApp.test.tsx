@@ -13,6 +13,7 @@ import {
   OTHER_IMPORT_ID,
   createdContext,
   initializeMessage,
+  processingContext,
   uploadFailedContext,
   uploadedContext,
 } from '../../test/fixtures.ts'
@@ -390,6 +391,73 @@ describe('ImportApp', () => {
     const main = screen.getByRole('main')
     expect(within(main).getAllByRole('list').length).toBeGreaterThan(0)
     expect(screen.getByRole('banner')).toHaveTextContent(/openimport/i)
+  })
+
+  it('shows terminal session expired when polling returns 401 with cached processing data', async () => {
+    let polls = 0
+    server.use(
+      http.get(contextUrl, () => {
+        polls += 1
+        if (polls === 1) {
+          return HttpResponse.json(processingContext)
+        }
+        return HttpResponse.json(
+          {
+            code: 'AUTH.INVALID_IMPORT_TOKEN',
+            message: 'Import token is not valid.',
+            traceId: 'req_poll_401',
+          },
+          { status: 401 },
+        )
+      }),
+    )
+
+    renderApp()
+    postFromParent(initializeMessage())
+
+    expect(await screen.findByTestId('processing-panel')).toBeInTheDocument()
+    await waitFor(
+      () => {
+        expect(screen.getByRole('alert')).toHaveTextContent(/expirou/i)
+      },
+      { timeout: 10000 },
+    )
+    expect(screen.queryByTestId('processing-panel')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /tentar atualizar/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /tentar novamente/i }),
+    ).not.toBeInTheDocument()
+
+    const pollsAtTerminal = polls
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(polls).toBe(pollsAtTerminal)
+  })
+
+  it('keeps recoverable poll errors with stale progress and manual retry', async () => {
+    let polls = 0
+    server.use(
+      http.get(contextUrl, () => {
+        polls += 1
+        if (polls === 1) {
+          return HttpResponse.json(processingContext)
+        }
+        return HttpResponse.json(
+          { code: 'OPENIMPORT.NETWORK', message: 'offline' },
+          { status: 503 },
+        )
+      }),
+    )
+
+    renderApp()
+    postFromParent(initializeMessage())
+
+    expect(await screen.findByTestId('processing-panel')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: /tentar atualizar/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/40/)).toBeInTheDocument()
   })
 })
 

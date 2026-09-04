@@ -140,8 +140,22 @@ export function copyForApiError(error: OpenImportApiError): ScreenCopy {
       return {
         ...base,
         title: 'Mapping incompleto',
-        body: 'Associe todos os campos obrigatórios e salve antes de gerar o preview.',
+        body: 'Associe todos os campos obrigatórios e salve antes de continuar.',
         retry: false,
+      }
+    case 'IMPORT.CONFIRMATION_NOT_ALLOWED':
+      return {
+        ...base,
+        title: 'Confirmação indisponível',
+        body: 'Esta sessão não aceita confirmação no estado atual. O contexto será atualizado.',
+        retry: false,
+      }
+    case 'IMPORT.PROCESSING_UNAVAILABLE':
+      return {
+        ...base,
+        title: 'Fila temporariamente indisponível',
+        body: 'O processamento não pôde ser enfileirado agora. Você pode tentar confirmar novamente com segurança.',
+        retry: true,
       }
     case 'IMPORT.PREVIEW_NOT_ALLOWED':
       return {
@@ -227,10 +241,21 @@ export function copyForApiError(error: OpenImportApiError): ScreenCopy {
 }
 
 export function sessionStatusLabel(
-  status: 'created' | 'uploaded' | 'upload_failed',
+  status:
+    | 'created'
+    | 'uploaded'
+    | 'upload_failed'
+    | 'queued'
+    | 'processing'
+    | 'ready'
+    | 'processing_failed',
 ) {
   if (status === 'created') return 'Sessão criada'
   if (status === 'uploaded') return 'Arquivo recebido'
+  if (status === 'queued') return 'Na fila'
+  if (status === 'processing') return 'Processando'
+  if (status === 'ready') return 'Pronto'
+  if (status === 'processing_failed') return 'Processamento falhou'
   return 'Envio falhou — sessão encerrada'
 }
 
@@ -239,6 +264,13 @@ export const UPLOAD_FAILED_NOTICE = {
   body: 'Esta sessão não aceita novo arquivo. O envio anterior falhou e a importação foi interrompida.',
   nextAction:
     'Reabra ou crie outra sessão pelo sistema de origem para tentar novamente com um novo arquivo.',
+} as const
+
+export const PROCESSING_FAILED_NOTICE = {
+  title: 'Falha no processamento',
+  body: 'O worker não concluiu esta importação. Não há retry automático nesta interface.',
+  nextAction:
+    'Crie uma nova sessão pelo sistema integrador ou fale com o suporte do produto cliente.',
 } as const
 
 export function abbreviateHash(hash: string) {

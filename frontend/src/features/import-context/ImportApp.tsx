@@ -2,11 +2,16 @@ import { useEffect, type ReactNode } from 'react'
 import { isOpenImportApiError, OpenImportApiError } from '../../api/errors.ts'
 import type { RuntimeConfig } from '../../config/runtime.ts'
 import { postToParent } from '../../embed/initialize-message.ts'
+import {
+  clearSessionCredential,
+  readSessionCredential,
+} from '../../embed/session-credential.ts'
 import { useHostSession } from '../../embed/use-host-session.ts'
 import { parseImportIdFromPath } from '../../routing/parse-import-path.ts'
 import { StatePanel } from '../shared/StatePanel.tsx'
 import { copyForApiError, copyForInitError } from './copy.ts'
 import { LoadedImportView } from './LoadedImportView.tsx'
+import { isTerminalCredentialError } from './terminal-credential-error.ts'
 import { useImportContextQuery } from './use-import-context-query.ts'
 
 type ImportAppProps = {
@@ -58,6 +63,14 @@ function InitializedImport({
     importId,
     generation,
   })
+
+  useEffect(() => {
+    if (query.isError && isTerminalCredentialError(query.error)) {
+      if (readSessionCredential(importId)) {
+        clearSessionCredential()
+      }
+    }
+  }, [importId, query.error, query.isError])
 
   useEffect(() => {
     const origin = parentOriginRef.current
@@ -125,7 +138,26 @@ function InitializedImport({
         nextAction="Aguarde a resposta do backend."
       />
     )
-  } else if (query.isError) {
+  } else if (query.isError && isTerminalCredentialError(query.error)) {
+    const apiError = isOpenImportApiError(query.error)
+      ? query.error
+      : new OpenImportApiError({
+          status: 401,
+          code: 'AUTH.INVALID_IMPORT_TOKEN',
+          message: 'Token inválido.',
+        })
+    const copy = copyForApiError(apiError)
+    body = (
+      <StatePanel
+        code={copy.code ?? apiError.code}
+        tone="fail"
+        title={copy.title}
+        body={copy.body}
+        nextAction="Reabra a sessão pelo sistema de origem com um token válido."
+        detail={[copy.code, copy.traceId].filter(Boolean).join(' · ') || undefined}
+      />
+    )
+  } else if (query.isError && !query.data) {
     const apiError = isOpenImportApiError(query.error)
       ? query.error
       : new OpenImportApiError({
@@ -158,12 +190,34 @@ function InitializedImport({
         }
       />
     )
-  } else {
+  } else if (query.data) {
+    const pollCopy =
+      query.isError && isOpenImportApiError(query.error)
+        ? copyForApiError(query.error)
+        : null
     body = (
       <LoadedImportView
         context={query.data}
         apiBaseUrl={config.apiBaseUrl}
         generation={generation}
+        pollError={
+          pollCopy && pollCopy.retry
+            ? `${pollCopy.title}. ${pollCopy.body}`
+            : null
+        }
+        onRetryPoll={() => {
+          void query.refetch()
+        }}
+      />
+    )
+  } else {
+    body = (
+      <StatePanel
+        code="CONTEXT.LOADING"
+        tone="wait"
+        title="Carregando o contexto da importação"
+        body="Consultando a sessão, o template e o mapping."
+        nextAction="Aguarde a resposta do backend."
       />
     )
   }

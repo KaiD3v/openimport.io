@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   createdContext,
+  processingFailedContext,
+  queuedContext,
+  readyContext,
   uploadedContext,
   uploadFailedContext,
 } from '../../test/fixtures.ts'
@@ -15,6 +18,7 @@ describe('resolveFlowPresentation', () => {
       { id: 'upload', label: 'Enviar arquivo', state: 'current' },
       { id: 'map', label: 'Mapear', state: 'upcoming' },
       { id: 'review', label: 'Revisar', state: 'upcoming' },
+      { id: 'process', label: 'Processar', state: 'upcoming' },
     ])
     expect(presentation.navLabel).toMatch(/enviar arquivo/i)
   })
@@ -47,6 +51,28 @@ describe('resolveFlowPresentation', () => {
     expect(presentation.kind).toBe('active')
     expect(presentation.steps.find((step) => step.id === 'review')?.state).toBe(
       'current',
+    )
+  })
+
+  it('marks process as current while queued', () => {
+    const presentation = resolveFlowPresentation(queuedContext)
+    expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
+      'current',
+    )
+  })
+
+  it('marks process as done when ready', () => {
+    const presentation = resolveFlowPresentation(readyContext)
+    expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
+      'done',
+    )
+  })
+
+  it('treats processing_failed as interrupted on the process step', () => {
+    const presentation = resolveFlowPresentation(processingFailedContext)
+    expect(presentation.kind).toBe('interrupted')
+    expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
+      'failed',
     )
   })
 

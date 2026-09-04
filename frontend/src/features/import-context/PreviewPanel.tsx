@@ -287,11 +287,6 @@ function PreviewResult({ preview }: { preview: ImportPreview }) {
       {preview.rows.length === 0 ? (
         <p className="oi-empty">A amostra desta resposta está vazia.</p>
       ) : null}
-
-      <p className="oi-preview-end" role="status">
-        Preview concluído. A confirmação e o processamento definitivo ainda não
-        estão disponíveis nesta versão.
-      </p>
     </div>
   )
 }

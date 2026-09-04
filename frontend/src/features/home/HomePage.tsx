@@ -103,17 +103,19 @@ ABC-2;3;abc`}</code>
               com <span className="oi-mono">oi_import_</span> em memória.
             </p>
             <p>
-              Upload, mapping otimista e preview normalizado sem confirmação
-              definitiva.
+              Upload, mapping otimista, preview normalizado e confirmação
+              assíncrona até o snapshot final.
             </p>
             <p>
               Conflitos de revisão pedem decisão explícita;{' '}
-              <span className="oi-mono">upload_failed</span> é terminal.
+              <span className="oi-mono">upload_failed</span> e{' '}
+              <span className="oi-mono">processing_failed</span> são terminais.
             </p>
           </div>
           <p className="oi-limit-note" role="note">
-            O fluxo termina no preview. Confirmação e processamento definitivo
-            ainda não estão disponíveis nesta versão.
+            O navegador não consome valid-rows nem results — só o backend do
+            cliente, com API key. O token <span className="oi-mono">oi_import_</span>{' '}
+            permanece somente em memória.
           </p>
         </section>
 
