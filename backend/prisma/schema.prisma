@@ -43,18 +43,27 @@ enum ImportRecordClassification {
   @@map("import_record_classification")
 }
 
+enum ImportClientResultOutcome {
+  accepted
+  rejected
+
+  @@map("import_client_result_outcome")
+}
+
 model Organization {
   id        String   @id @default(uuid(7)) @db.Uuid
   name      String   @db.VarChar(200)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  apiKeys            ApiKey[]
-  templates          ImportTemplate[]
-  importSessions     ImportSession[]
-  importAccessTokens ImportAccessToken[]
-  importExecutions   ImportExecution[]
-  importRecords      ImportRecord[]
+  apiKeys             ApiKey[]
+  templates           ImportTemplate[]
+  importSessions      ImportSession[]
+  importAccessTokens  ImportAccessToken[]
+  importExecutions    ImportExecution[]
+  importRecords       ImportRecord[]
+  importResultBatches ImportResultBatch[]
+  importRecordResults ImportRecordResult[]
 
   @@map("organizations")
 }
@@ -130,10 +139,12 @@ model ImportSession {
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   template     ImportTemplate      @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  columns      ImportColumn[]
-  accessTokens ImportAccessToken[]
-  executions   ImportExecution[]
-  records      ImportRecord[]
+  columns       ImportColumn[]
+  accessTokens  ImportAccessToken[]
+  executions    ImportExecution[]
+  records       ImportRecord[]
+  resultBatches ImportResultBatch[]
+  recordResults ImportRecordResult[]
 
   @@unique([organizationId, idempotencyKeyHash], map: "uq_import_sessions_org_idempotency_key_hash")
   @@index([organizationId], map: "idx_import_sessions_organization_id")
@@ -163,9 +174,11 @@ model ImportExecution {
   createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  importSession ImportSession  @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession        @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
   records       ImportRecord[]
+  resultBatches ImportResultBatch[]
+  recordResults ImportRecordResult[]
 
   @@unique([importSessionId, confirmationFingerprint], map: "uq_import_executions_session_fingerprint")
   @@index([organizationId, importSessionId], map: "idx_import_executions_org_session")
@@ -193,6 +206,54 @@ model ImportRecord {
   @@index([organizationId, importSessionId, classification, recordNumber], map: "idx_import_records_org_session_class_record")
   @@index([organizationId, executionId], map: "idx_import_records_org_execution")
   @@map("import_records")
+}
+
+model ImportResultBatch {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  importSessionId    String   @map("import_session_id") @db.Uuid
+  executionId        String   @map("execution_id") @db.Uuid
+  idempotencyKeyHash String   @map("idempotency_key_hash") @db.VarChar(64)
+  requestFingerprint String   @map("request_fingerprint") @db.VarChar(64)
+  itemCount          Int      @map("item_count")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession        @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  execution     ImportExecution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  results       ImportRecordResult[]
+
+  @@unique([organizationId, idempotencyKeyHash], map: "uq_import_result_batches_org_idempotency_key_hash")
+  @@index([organizationId, importSessionId], map: "idx_import_result_batches_org_session")
+  @@index([organizationId, executionId], map: "idx_import_result_batches_org_execution")
+  @@map("import_result_batches")
+}
+
+model ImportRecordResult {
+  id              String                    @id @default(uuid(7)) @db.Uuid
+  organizationId  String                    @map("organization_id") @db.Uuid
+  importSessionId String                    @map("import_session_id") @db.Uuid
+  executionId     String                    @map("execution_id") @db.Uuid
+  batchId         String                    @map("batch_id") @db.Uuid
+  recordNumber    Int                       @map("record_number")
+  outcome         ImportClientResultOutcome
+  clientRecordId  String?                   @map("client_record_id") @db.VarChar(128)
+  errorCode       String?                   @map("error_code") @db.VarChar(64)
+  errorMessage    String?                   @map("error_message") @db.VarChar(500)
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  importSession ImportSession     @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  execution     ImportExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  batch         ImportResultBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([executionId, recordNumber], map: "uq_import_record_results_execution_record_number")
+  @@index([organizationId, importSessionId], map: "idx_import_record_results_org_session")
+  @@index([organizationId, executionId, outcome], map: "idx_import_record_results_org_execution_outcome")
+  @@index([batchId], map: "idx_import_record_results_batch_id")
+  @@map("import_record_results")
 }
 
 model ImportColumn {
