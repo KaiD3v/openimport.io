@@ -7,7 +7,7 @@ O backend NestJS expõe uma API multi-tenant. A organização vem da credencial 
 - `ConfigModule`: valida ambiente com Zod e fornece `ENV`.
 - `AuthModule`: `ApiKeyGuard` autentica Bearer (API key ou token de importação) e `ImportAuthorizationGuard` autoriza por tipo de credencial e `importId` persistido. A organização de um token vem da sessão e da API key emissora após checagem de consistência, não só da linha do token. `CurrentOrganization` continua expondo a organização; o contexto inclui `credential.type`. Health e, quando habilitados, Swagger/OpenAPI são públicos.
 - `TemplateModule`: controller, serviço e repository para templates e fields.
-- `ImportModule`: controller, serviço/repository de sessões, mapping, CSV, `PreviewService`, `ConfirmService`, `RejectedRowsService` e `ImportProcessingWorker` (BullMQ).
+- `ImportModule`: controller, serviço/repository de sessões, mapping, CSV, `PreviewService`, `ConfirmService`, `RejectedRowsService`, `ImportProcessingWorker` (BullMQ) e `ImportFileRetentionCleaner` (retenção de CSV no storage).
 - `WebhookModule`: cadastro do endpoint `import.ready` (API key), outbox `webhook_deliveries` na mesma transação do CAS de ready, fila `webhook-delivery`, worker de POST assinado e reconciliador.
 - `ObjectStorageModule`: porta `OBJECT_STORAGE`; `S3ObjectStorage` é o adaptador S3/MinIO.
 - Redis + BullMQ: filas `import-processing` e `webhook-delivery`. Desenvolvimento usa Redis DB 0 (`REDIS_URL=.../0`); E2E usa DB 15 para não cruzar jobs com `start:prod`/`start:dev`.
@@ -38,8 +38,8 @@ Mapping é JSONB na sessão, associado por posição de coluna e `fieldKey`, com
 
 ## Onde ficam os dados
 
-PostgreSQL armazena organizações, hash/prefixo de API keys, hash/prefixo de tokens de importação, templates/fields, sessão, metadados de upload, colunas, mapping, execução, registros normalizados/erros, endpoint de webhook (URL + segredo cifrado) e deliveries `import.ready` com snapshot de URL, payload e ciphertext. O objeto CSV permanece no storage. Respostas não expõem `organizationId`, chave de storage, hash de credencial nem o segredo completo do webhook após a criação.
+PostgreSQL armazena organizações, hash/prefixo de API keys, hash/prefixo de tokens de importação, templates/fields, sessão, metadados de upload, colunas, mapping, execução, registros normalizados/erros, endpoint de webhook (URL + segredo cifrado) e deliveries `import.ready` com snapshot de URL, payload e ciphertext. O objeto CSV permanece no storage até a retenção expirar para sessões terminais elegíveis; depois só a evidência `storageDeletedAt` fica no PostgreSQL. Respostas não expõem `organizationId`, chave de storage, hash de credencial nem o segredo completo do webhook após a criação.
 
-DLQ completa / bull-board / cancelamento ficam fora desta fatia; retries BullMQ limitados + `processing_failed` cobrem falhas definitivas de importação, e deliveries de webhook esgotadas ficam `failed` sem alterar `ready`. Estratégia futura: fila DLQ dedicada e retenção auditável de jobs falhos.
+DLQ completa / bull-board / cancelamento ficam fora desta fatia; retries BullMQ limitados + `processing_failed` cobrem falhas definitivas de importação, e deliveries de webhook esgotadas ficam `failed` sem alterar `ready`. O cleaner de CSV usa claim/CAS in-process (sem job BullMQ por arquivo). Estratégia futura: fila DLQ dedicada e retenção auditável de jobs falhos.
 
 Para estados e constraints, consulte [Persistência e estados](data-model.md). Para regras do stream, consulte [CSV e normalização](csv-and-normalization.md).

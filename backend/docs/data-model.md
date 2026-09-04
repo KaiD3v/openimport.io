@@ -27,9 +27,9 @@ IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAc
 | `ApiKey` | `keyHash` SHA-256 único, prefixo, `revokedAt` |
 | `ImportAccessToken` | `tokenHash` SHA-256 único, prefixo, sessão, emissor, `expiresAt`, `revokedAt` |
 | `ImportTemplate` / `TemplateField` | nome por organização, fields ordenados por `position` |
-| `ImportSession` | status, hashes de idempotência/fingerprint, metadata do arquivo, `mapping` JSONB, `mappingRevision`, `confirmedAt` |
+| `ImportSession` | status, hashes de idempotência/fingerprint, metadata do arquivo, `mapping` JSONB, `mappingRevision`, `confirmedAt`, `storageObjectKey` (nullable), `storageDeletedAt` / claim de retenção |
 | `ImportColumn` | nome e posição de header após upload |
-| `ImportExecution` | fingerprint de confirmação, revisão/hash congelados, `jobId`, progresso, status da tentativa |
+| `ImportExecution` | fingerprint de confirmação, revisão/hash congelados, `jobId`, progresso, status da tentativa, `finishedAt` (relógio da retenção de CSV) |
 | `ImportRecord` | `recordNumber`, `valid`/`invalid`, `payload` JSON (válido) ou `errors` JSON (inválido) |
 | `WebhookEndpoint` | URL HTTPS, `eventType` (`import.ready`), segredo cifrado (AES-256-GCM), prefixo diagnóstico, `isActive`; no máximo um por `(organizationId, eventType)` |
 | `WebhookDelivery` | outbox `import.ready`: payload mínimo, URL congelada, `jobId`, status `pending`/`delivered`/`failed`; único por `(organizationId, executionId, eventType)` |
@@ -47,7 +47,7 @@ IDs são UUID v7. `ImportSession.templateId` usa `onDelete: Restrict`; `ImportAc
 - Webhook endpoint: `(organizationId, eventType)` único.
 - Webhook delivery: `(organizationId, executionId, eventType)` único; `jobId` único; `secretCiphertext` é snapshot obrigatório (cópia do ciphertext do endpoint ativo no outbox).
 
-Migrations versionadas incluem `20260904072000_webhook_import_ready` e `20260904184500_webhook_delivery_secret_snapshot` (coluna `secret_ciphertext` na delivery, backfill a partir do endpoint associado, depois `NOT NULL`).
+Migrations versionadas incluem `20260904072000_webhook_import_ready`, `20260904184500_webhook_delivery_secret_snapshot`, `20260904221500_import_file_retention` (colunas de retenção/claim no `import_sessions`) e `20260904230000_import_executions_file_retention_index` (índice parcial em `import_executions(finished_at, import_session_id)` para candidatos `ready`/`failed`). Prisma não modela índices parciais no schema DSL; a definição fica só no SQL da migration.
 
 ## Status da sessão
 
@@ -71,6 +71,8 @@ Registros parcialmente escritos de uma execução falha **não** formam snapshot
 Resultados do cliente (`ImportResultBatch` / `ImportRecordResult`) vinculam-se à execução `ready`. A chave idempotente do lote é guardada só como hash; o resultado final por `(executionId, recordNumber)` é único e não sobrescrevível. `isComplete` no resumo significa `pending === 0` e **não** altera o status `ready` da sessão.
 
 O webhook `import.ready` é outbox: a delivery pending nasce na mesma transação do CAS de ready se existir endpoint ativo, com snapshot autocontido de URL, payload e ciphertext do segredo; sem endpoint ativo, ready continua válido e nenhuma delivery é criada. PUT cria o endpoint com AAD `organizationId:endpointId` correspondente ao ID persistido, ou, em disputa da unique `(organizationId, eventType)`, lê o vencedor e só então rotaciona com o ID real — nenhum statement commitado grava ciphertext de outro ID. PUT/DELETE do endpoint afetam só eventos **futuros**. Falha HTTP após retries marca a delivery `failed` e **não** reverte `ready`.
+
+Depois que a sessão está `ready` ou `processing_failed`, o objeto CSV pode ser removido pelo cleaner de retenção após `IMPORT_FILE_RETENTION_HOURS` (relógio = `ImportExecution.finishedAt`). `storageDeletedAt` registra a remoção; `storageObjectKey` é anulado. APIs de snapshot (`valid-rows`, rejected-rows, results, GET sessão) continuam a ler PostgreSQL.
 
 ## Idempotência e revisão
 

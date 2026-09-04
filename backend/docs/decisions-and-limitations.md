@@ -12,19 +12,20 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 | Preview síncrono e não persistido | Releitura completa acontece na requisição; não grava rows. |
 | Confirmação idempotente + worker | `POST .../confirm` CAS + BullMQ; snapshot só em `ready`. |
 | Webhook `import.ready` assinado | Outbox na txn de ready + snapshot autocontido (URL, payload, ciphertext); HTTP pinado (um DNS por tentativa); HMAC-SHA256; PUT/DELETE só no futuro. |
+| Retenção de CSV no storage | Após TTL (`IMPORT_FILE_RETENTION_HOURS`), cleaner remove objeto de sessões `ready`/`processing_failed` com claim/CAS; PG mantém sessão, records e results. |
 | Perfil monetário explícito | `pt-BR-v1` transforma unidades em centavos e evita inferência de locale. |
 | Limites separados | Bytes, rows, columns, fields, records, batch de persistência e resposta de preview têm controles distintos. |
 | Parser sem API privada | Streaming usa componentes públicos e `csv-parse`, com scanner/coalescedor próprio. |
 
 ## Limitações conhecidas
 
-Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada nem dashboard de webhooks/multi-evento.
+Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção de `ImportRecord`/results/webhook deliveries, nem dashboard de webhooks/multi-evento. Retenção automática remove só o CSV no object storage após TTL para `ready`/`processing_failed`; não limpa órfãos sem `storageObjectKey` nem aplica lifecycle nativo do bucket.
 
 ## Próximos passos possíveis, não comprometidos
 
 - Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e rate limiting.
 - DLQ/bull-board e processo worker dedicado.
-- Retenção, exclusão e observabilidade além dos health probes atuais.
+- Retenção/exclusão de sessões e registros no PostgreSQL; lifecycle de bucket para órfãos.
 - Listagem/histórico, XLSX e perfis de normalização adicionais.
 - Webhooks genéricos além de `import.ready`, dashboard de deliveries, retry manual por HTTP e DLQ administrativa.
 
