@@ -16,7 +16,7 @@ CSV pode conter dados pessoais. Use fixtures sintéticas, limite acesso a logs e
 
 ## Saúde e dependências
 
-`/health` é liveness. `/health/ready` executa ping no PostgreSQL e responde 503 quando o banco não está pronto. Readiness não verifica MinIO/S3 nem Redis; falhas desses serviços aparecem nas operações de upload/preview/confirm.
+`/health` é liveness. `/health/ready` verifica em paralelo PostgreSQL, Redis e bucket S3/MinIO (HeadBucket, PING, `SELECT 1`) com timeout limitado por dependência (`HEALTH_PROBE_TIMEOUT_MS`). Ao expirar o timeout, um `AbortSignal` cancela HeadBucket no AWS SDK e encerra imediatamente a conexão efêmera do probe Redis (`disconnect` + `resetAndDestroy` no socket); a promise tardia permanece observada para evitar unhandled rejections. O probe PostgreSQL respeita o sinal antes/depois de `isReady()`, mas a query Prisma em voo não é cancelável de forma nativa. Qualquer falha ou timeout responde `503 HEALTH.NOT_READY` com mensagem genérica; logs internos podem registrar nomes estáticos (`postgres`, `redis`, `object_storage`) sem URLs ou credenciais. O probe não cria bucket, não publica jobs e não limpa Redis.
 
 As credenciais do `docker-compose.yml` são fracas e exclusivamente locais. Elas não são referência de produção.
 
@@ -26,4 +26,4 @@ CSV é salvo fora do PostgreSQL em storage S3 compatível; banco guarda metadata
 
 ## Riscos para exposição pública
 
-Antes de publicar, faltam ao menos modelo de usuário, gestão segura de chaves, rate limiting, retenção/eliminação, monitoração de storage/Redis na readiness, estratégia de backup e proteção de dados. O token de importação reduz o risco de expor a API key no navegador, mas não substitui hardening público completo. Webhooks `import.ready` são assinados (HMAC-SHA256) e sujeitos a SSRF; o consumidor ainda precisa verificar assinatura, janela de replay e dedupe.
+Antes de publicar, faltam ao menos modelo de usuário, gestão segura de chaves, rate limiting, retenção/eliminação, estratégia de backup e proteção de dados. O token de importação reduz o risco de expor a API key no navegador, mas não substitui hardening público completo. Webhooks `import.ready` são assinados (HMAC-SHA256) e sujeitos a SSRF; o consumidor ainda precisa verificar assinatura, janela de replay e dedupe.

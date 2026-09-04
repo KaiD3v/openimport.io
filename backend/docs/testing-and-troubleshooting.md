@@ -25,6 +25,7 @@ As fixtures E2E são isoladas por tenant. Regressões cobertas incluem BOM/UTF-8
 | Sintoma | Verifique | Ação segura |
 | --- | --- | --- |
 | API não inicia | `.env`, `DATABASE_URL`, portas e `docker compose ps` | corrija variável/serviço; não resete volumes |
+| `/health/ready` 503 | Postgres, Redis (`REDIS_URL`) e bucket S3/MinIO | confirme serviços do Compose; probe é somente leitura (PING, HeadBucket, `SELECT 1`); timeout aborta Redis/S3 e observa promises tardias — Postgres in-flight não é cancelável |
 | 401 | formato Bearer, chave local seedada, revogação | gere/seed uma chave local válida; não logue-a |
 | 404 em recurso conhecido | UUID, organização da chave | trate também como isolamento entre organizações |
 | upload 400/413/422 | único campo `file`, MIME/extensão, UTF-8 e limites | corrija arquivo; não reenvie sem entender o status |

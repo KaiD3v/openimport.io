@@ -13,7 +13,7 @@ O OpenAPI gerado em `/docs-json` é a fonte complementar de tipos. `/docs` e `/d
 | GET | `/health` | não | `200 {"status":"ok"}` |
 | GET | `/health/ready` | não | `200 {"status":"ok"}` ou `503 HEALTH.NOT_READY` |
 
-Readiness testa apenas PostgreSQL, não S3/MinIO.
+Readiness verifica PostgreSQL, Redis e bucket S3/MinIO em paralelo, com timeout por dependência (`HEALTH_PROBE_TIMEOUT_MS`, padrão 2000 ms). O probe é somente leitura: não cria bucket, não publica jobs e não altera filas. A resposta pública não indica qual dependência falhou.
 
 ## Templates
 

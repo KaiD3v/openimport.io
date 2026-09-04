@@ -1,9 +1,12 @@
 # OpenImport backend
 
-API NestJS multi-tenant para templates, sessões de importação CSV, mapping manual, preview síncrono e confirmação assíncrona com snapshot persistido. A organização vem da API key:
+API NestJS multi-tenant para templates, sessões de importação CSV, mapping manual, preview síncrono e confirmação assíncrona com snapshot persistido. A organização autenticada vem da credencial Bearer:
+
+- **API key** (`oi_live_…`) → organização da chave ativa.
+- **Token de importação** (`oi_import_…`) → organização da sessão vinculada ao token.
 
 ```http
-Authorization: Bearer <api-key>
+Authorization: Bearer <api-key|import-access-token>
 ```
 
 Documentação técnica versionada: [`docs/README.md`](docs/README.md).

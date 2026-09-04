@@ -18,13 +18,13 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 
 ## Limitações conhecidas
 
-Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada, dashboard de webhooks/multi-evento nem readiness de storage/Redis.
+Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção programada nem dashboard de webhooks/multi-evento.
 
 ## Próximos passos possíveis, não comprometidos
 
 - Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e rate limiting.
 - DLQ/bull-board e processo worker dedicado.
-- Retenção, exclusão, observabilidade e readiness abrangendo storage/Redis.
+- Retenção, exclusão e observabilidade além dos health probes atuais.
 - Listagem/histórico, XLSX e perfis de normalização adicionais.
 - Webhooks genéricos além de `import.ready`, dashboard de deliveries, retry manual por HTTP e DLQ administrativa.
 
