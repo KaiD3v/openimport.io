@@ -134,5 +134,6 @@ O smoke gera segredos efêmeros, aplica `prisma migrate deploy` em banco vazio e
 - Readiness: `http://localhost:3000/health/ready`
 - Swagger: `http://localhost:3000/docs`
 - OpenAPI JSON: `http://localhost:3000/docs-json`
+- Laboratório (com o frontend em `:5173`): `http://localhost:5173/dev` — **Criar sessão** usa [`examples/products-template.json`](examples/products-template.json); ver [`examples/README.md`](examples/README.md).
 
 Swagger e JSON são habilitados quando `NODE_ENV` não é `production`, ou em produção com `ENABLE_DOCS=true`.

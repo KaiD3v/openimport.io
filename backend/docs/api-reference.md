@@ -35,6 +35,8 @@ Retorna `201` com `id`, `name`, `fields` (inclui `position` zero-based), `create
 
 `name` tem 1–100 caracteres após trim e é único por organização. Há 1–50 fields; `key` é única e segue `^[a-z][a-zA-Z0-9]{0,63}$`, `label` tem 1–120 e `type` é `string`, `integer` ou `currency`. `required` é booleano real. Erros: `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `409 TEMPLATE.NAME_CONFLICT`.
 
+Exemplo versionado: [`examples/products-template.json`](examples/products-template.json). O laboratório em `/dev` (`Criar sessão`) POSTa esse JSON com o nome sufixado ` lab <timestamp>`; editar o arquivo muda o template da próxima sessão. Ver [`examples/README.md`](examples/README.md).
+
 ### `GET /templates/:templateId`
 
 UUID obrigatório; retorna o mesmo formato (`200`) ou `400 VALIDATION.FAILED`, `401 AUTH.*`, `403 AUTH.INSUFFICIENT_SCOPE`, `404 TEMPLATE.NOT_FOUND`.

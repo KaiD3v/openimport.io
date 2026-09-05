@@ -16,9 +16,11 @@ npm run dev
 
 Rota da importação: `/imports/:importId`.
 
-Harness de desenvolvimento: `/dev` (ausente do build de produção). Token só em memória, nunca na query string.
+Harness de desenvolvimento: `/dev` (ausente do build de produção). Token só em memória, nunca na query string. Em `npm run dev`, **Criar sessão** pede ao Vite (Node) para emitir `importId` + `oi_import_` com a seed do backend — a `oi_live_` não entra no bundle.
 
-QA visual sem token: seção **Pré-visualização visual** ou `/dev?fixture=<id>` (`created`, `uploaded-incomplete`, `uploaded-complete`, `upload-failed`, `long-labels`).
+O botão lê [`../backend/docs/examples/products-template.json`](../backend/docs/examples/products-template.json) em cada clique (sem reiniciar o Vite). Edite `name` e `fields` nesse arquivo para mudar o template da sessão. `type` é `string`, `integer` ou `currency`; `key` camelCase ASCII a começar em minúscula. O lab grava o template como `<name> lab <timestamp>`. CSV de teste na mesma pasta (`products-valid.csv`, `products-invalid.csv`) deve seguir as `key`. Outro caminho de arquivo: `defaultTemplatePath` em [`scripts/create-lab-session.mjs`](scripts/create-lab-session.mjs), depois reinicie `npm run dev`. Não há seletor de template no `/dev`.
+
+QA visual sem token: seletor **Fixtures** no laboratório ou `/dev?fixture=<id>` (`created`, `uploaded-incomplete`, `uploaded-complete`, `upload-failed`, `long-labels`).
 
 ## Fluxo suportado
 

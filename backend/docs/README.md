@@ -20,7 +20,7 @@ Não existem DLQ completa, XLSX, endpoints de listagem/histórico, RBAC geral, a
 
 ## Exemplos e walkthrough
 
-Os dados sintéticos estão em [`examples/`](examples/): template, CSV válido e CSV com erros. O walkthrough completo está em [Referência HTTP](api-reference.md#walkthrough-reproduzível), e seu efeito no preview em [CSV e normalização](csv-and-normalization.md#fixtures-documentais).
+Os dados sintéticos estão em [`examples/`](examples/) ([índice](examples/README.md)): template, CSV válido e CSV com erros. O botão **Criar sessão** do laboratório (`/dev`) usa [`examples/products-template.json`](examples/products-template.json). O walkthrough completo está em [Referência HTTP](api-reference.md#walkthrough-reproduzível), e seu efeito no preview em [CSV e normalização](csv-and-normalization.md#fixtures-documentais).
 
 ## Manutenção
 

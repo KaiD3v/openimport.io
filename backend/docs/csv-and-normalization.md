@@ -30,6 +30,7 @@ Qualquer erro faz a linha inteira ter `valid:false` e `data:null`, com erros por
 
 ## Fixtures documentais
 
+- [`examples/products-template.json`](examples/products-template.json) é o corpo de `POST /templates` e a fonte do botão **Criar sessão** em `/dev`. Índice: [`examples/README.md`](examples/README.md).
 - [`examples/products-valid.csv`](examples/products-valid.csv) normaliza preço `299,90` para `29990`.
 - [`examples/products-invalid.csv`](examples/products-invalid.csv) preserva uma primeira linha válida e inclui preço em formato US, inteiro inválido e campo obrigatório vazio. No walkthrough, o resultado esperado é `totalRows: 4`, `validRows: 1`, `invalidRows: 3`.
 

@@ -127,8 +127,13 @@ O Vite sobe em **http://localhost:5173**. O `.env.example` já usa `VITE_OPENIMP
 1. Confirme o backend: http://localhost:3000/health/ready deve responder `{"status":"ok"}`.
 2. Abra http://localhost:5173 — a home descreve o pipeline.
 3. Em desenvolvimento, **Abrir laboratório** leva a `/dev`.
+4. Clique em **Criar sessão**. O Vite lê `SEED_API_KEY` de `backend/.env` no Node, cria template + sessão + token `oi_import_` e inicializa o iframe. A chave `oi_live_` não passa pelo navegador.
 
-O laboratório precisa de um `importId` e de um token `oi_import_`, emitidos com a API key de seed (nunca no navegador). A partir da raiz do repositório:
+Cada clique persiste um template e uma sessão no Postgres local (não há DELETE na API). O template vem de [`backend/docs/examples/products-template.json`](backend/docs/examples/products-template.json) — o Vite relê o arquivo a cada clique (não é preciso reiniciar o frontend). Em seguida envie um CSV de [`backend/docs/examples/`](backend/docs/examples/) (`products-valid.csv` ou `products-invalid.csv`). Mapping sugerido com o JSON atual: coluna `#0` → `sku`, `#1` → `stock`, `#2` → `priceInCents`.
+
+Para mudar os campos da sessão de laboratório, edite esse JSON (`name` + `fields`) e clique outra vez em **Criar sessão**. `type` só aceita `string`, `integer` ou `currency`; `key` começa em minúscula (`sku`, `priceInCents`). O lab sufixa ` lab <timestamp>` no `name`, por isso o mesmo nome no arquivo não dá `TEMPLATE.NAME_CONFLICT`. Se alterar as `key`, alinhe o CSV de exemplo. Para usar outro arquivo, mude `defaultTemplatePath` em [`frontend/scripts/create-lab-session.mjs`](frontend/scripts/create-lab-session.mjs) e reinicie `npm run dev`. Contrato HTTP: [`backend/docs/api-reference.md`](backend/docs/api-reference.md) (`POST /templates`).
+
+Fallback HTTP (Swagger em http://localhost:3000/docs, Insomnia, ou curl). A seed continua só no servidor:
 
 ```bash
 export API_KEY='oi_live_…'   # valor de SEED_API_KEY no backend/.env
@@ -154,7 +159,34 @@ curl -sS -X POST "$API/imports/<importId>/access-tokens" \
   -d '{"expiresInSeconds":1800}'
 ```
 
-Cole `importId` e `accessToken` em `/dev` e envie um CSV de [`backend/docs/examples/`](backend/docs/examples/) (`products-valid.csv` ou `products-invalid.csv`). Mapping sugerido: coluna `#0` → `sku`, `#1` → `stock`, `#2` → `priceInCents`.
+No PowerShell do Windows use `curl.exe` (não o alias `curl`), crase `` ` `` para continuar a linha, e aspas em volta de `@arquivo`. Corra isto no host Windows se o Nest estiver em `localhost:3000` no Windows — o WSL não vê esse `localhost`.
+
+```powershell
+$API_KEY = ((Get-Content .\backend\.env |
+  Where-Object { $_ -match '^SEED_API_KEY=' }) -replace '^SEED_API_KEY=', '').Trim()
+$API = 'http://localhost:3000/api/v1'
+
+# 1) Template
+curl.exe -sS -X POST "$API/templates" `
+  -H "Authorization: Bearer $API_KEY" `
+  -H "Content-Type: application/json" `
+  --data-binary "@backend/docs/examples/products-template.json"
+
+# 2) Sessão — troque <templateId> pelo id da resposta anterior
+curl.exe -sS -X POST "$API/imports" `
+  -H "Authorization: Bearer $API_KEY" `
+  -H "Content-Type: application/json" `
+  -H "Idempotency-Key: local-dev-001" `
+  -d '{"templateId":"<templateId>"}'
+
+# 3) Token — o accessToken aparece só nesta resposta
+curl.exe -sS -X POST "$API/imports/<importId>/access-tokens" `
+  -H "Authorization: Bearer $API_KEY" `
+  -H "Content-Type: application/json" `
+  -d '{"expiresInSeconds":1800}'
+```
+
+Cole `importId` e `accessToken` em `/dev` só se não usou o botão.
 
 Walkthrough HTTP completo (preview, confirm, rejected-rows e results): [Referência HTTP](backend/docs/api-reference.md#walkthrough-reproduzível).
 
@@ -172,7 +204,8 @@ Os volumes do Compose (Postgres, Redis, MinIO) permanecem. `docker compose down 
 | Público | Onde |
 | --- | --- |
 | Backend (setup, API, arquitetura) | [`backend/README.md`](backend/README.md) e [`backend/docs/README.md`](backend/docs/README.md) |
-| Frontend (embed, `/dev`, variáveis) | [`frontend/README.md`](frontend/README.md) |
+| Frontend (embed, `/dev`, template do lab) | [`frontend/README.md`](frontend/README.md) |
+| Fixtures (JSON/CSV do laboratório) | [`backend/docs/examples/README.md`](backend/docs/examples/README.md) |
 | Self-host / produção | [`docs/deployment.md`](docs/deployment.md) |
 
 O repositório tem dois apps independentes: `backend/` (NestJS, Prisma, BullMQ) e `frontend/` (React, Vite). Não há login de usuário, listagem de importações, XLSX nem gestão de API keys por HTTP — a chave de organização vive no servidor do host.
