@@ -8,6 +8,7 @@ import {
 } from '../../embed/session-credential.ts'
 import { useHostSession } from '../../embed/use-host-session.ts'
 import { parseImportIdFromPath } from '../../routing/parse-import-path.ts'
+import { SiteChrome } from '../shared/SiteChrome.tsx'
 import { StatePanel } from '../shared/StatePanel.tsx'
 import { copyForApiError, copyForInitError } from './copy.ts'
 import { LoadedImportView } from './LoadedImportView.tsx'
@@ -39,6 +40,7 @@ export function ImportApp({ pathname, config }: ImportAppProps) {
               : 'Abra esta interface em /imports/:importId a partir do sistema de origem.'
           }
           nextAction="Corrija a URL no sistema hospedeiro e recarregue o iframe."
+          action={{ label: 'Ir para a página inicial', href: '/' }}
         />
       </ImportShell>
     )
@@ -233,20 +235,14 @@ function ImportShell({
   children: ReactNode
 }) {
   return (
-    <div className="oi-app">
-      <header className="oi-top" role="banner">
-        <p className="oi-mark">
-          <span className="oi-brand-mark" aria-hidden="true" />
-          OpenImport
-        </p>
-        <p className="oi-tag">CSV → schema → JSON</p>
-        {importId ? (
-          <p className="oi-id">
-            <span>Sessão</span> {importId}
-          </p>
-        ) : null}
-      </header>
-      <main className="oi-main">{children}</main>
-    </div>
+    <SiteChrome
+      variant="workbench"
+      importId={importId}
+      statusLabel="CSV → mapping → JSON"
+    >
+      <main id="conteudo-principal" className="oi-main" tabIndex={-1}>
+        {children}
+      </main>
+    </SiteChrome>
   )
 }

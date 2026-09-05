@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useId, useRef, useState } from 'react'
 import { isOpenImportApiError, OpenImportApiError } from '../../api/errors.ts'
+import { isAbortError } from '../../api/http.ts'
 import type { ImportContext } from '../../api/import-context.schema.ts'
 import { importContextQueryKey } from '../../api/query-key.ts'
 import { assertSingleCsvFile, formatFileSize } from '../../api/upload-form.ts'
@@ -24,6 +25,7 @@ export function UploadPanel({
   const [selected, setSelected] = useState<File | null>(null)
   const [localError, setLocalError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [cancelled, setCancelled] = useState(false)
   const queryClient = useQueryClient()
   const canUpload = context.import.status === 'created'
 
@@ -54,6 +56,7 @@ export function UploadPanel({
     onSuccess: async () => {
       setSelected(null)
       setLocalError(null)
+      setCancelled(false)
       await queryClient.invalidateQueries({
         queryKey: [...importContextQueryKey(context.import.id), generation],
       })
@@ -62,6 +65,12 @@ export function UploadPanel({
       await queryClient.invalidateQueries({
         queryKey: [...importContextQueryKey(context.import.id), generation],
       })
+      if (isAbortError(error)) {
+        setCancelled(true)
+        setLocalError(null)
+        return
+      }
+      setCancelled(false)
       if (isOpenImportApiError(error)) {
         setLocalError(copyForApiError(error).body)
       }
@@ -76,8 +85,10 @@ export function UploadPanel({
       const file = assertSingleCsvFile(files)
       setSelected(file)
       setLocalError(null)
+      setCancelled(false)
     } catch (error) {
       setSelected(null)
+      setCancelled(false)
       setLocalError(
         isOpenImportApiError(error)
           ? error.message
@@ -91,10 +102,25 @@ export function UploadPanel({
       ? copyForApiError(mutation.error)
       : null
 
+  const uploadState = mutation.isPending
+    ? 'sending'
+    : localError || mutationCopy
+      ? 'failed'
+      : cancelled
+        ? 'cancelled'
+        : selected
+          ? 'selected'
+          : 'empty'
+
+  const fileType = selected
+    ? selected.type || (selected.name.toLowerCase().endsWith('.csv') ? 'text/csv' : 'desconhecido')
+    : null
+
   return (
     <section
       className="oi-workbench oi-workbench-primary"
       aria-labelledby="oi-upload-title"
+      data-upload-state={uploadState}
     >
       <div className="oi-workbench-head">
         <h2 id="oi-upload-title">Enviar CSV</h2>
@@ -137,13 +163,23 @@ export function UploadPanel({
         <p className="oi-dropzone-hint">ou arraste o arquivo para esta área</p>
       </div>
 
+      <p className="oi-upload-state">
+        {uploadState === 'empty' ? 'Nenhum arquivo selecionado.' : null}
+        {uploadState === 'selected' ? 'Arquivo selecionado. Pronto para enviar.' : null}
+        {uploadState === 'sending' ? 'Enviando arquivo…' : null}
+        {uploadState === 'cancelled' ? 'Envio cancelado. Você pode enviar de novo.' : null}
+        {uploadState === 'failed' ? 'Falha no envio. Verifique o arquivo e tente novamente.' : null}
+      </p>
+
       {selected ? (
         <div className="oi-file-card">
           <p className="oi-file-card-label">Arquivo selecionado</p>
           <p>
             <strong className="oi-file-name">{selected.name}</strong>
           </p>
-          <p className="oi-file-size">{formatFileSize(selected.size)}</p>
+          <p className="oi-file-size">
+            {formatFileSize(selected.size)} · {fileType}
+          </p>
           <div className="oi-inline-actions">
             <button
               type="button"
@@ -152,9 +188,23 @@ export function UploadPanel({
               onClick={() => {
                 setSelected(null)
                 setLocalError(null)
+                setCancelled(false)
               }}
             >
               Remover seleção
+            </button>
+            <button
+              type="button"
+              className="oi-secondary"
+              disabled={mutation.isPending}
+              onClick={() => {
+                setSelected(null)
+                setLocalError(null)
+                setCancelled(false)
+                document.getElementById(inputId)?.click()
+              }}
+            >
+              Substituir arquivo
             </button>
             <button
               type="button"

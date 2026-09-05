@@ -6,6 +6,7 @@ import { HomePage } from './features/home/HomePage.tsx'
 import { InvalidImportPage } from './features/home/InvalidImportPage.tsx'
 import { NotFoundPage } from './features/home/NotFoundPage.tsx'
 import { ImportApp } from './features/import-context/ImportApp.tsx'
+import { SiteChrome } from './features/shared/SiteChrome.tsx'
 import { StatePanel } from './features/shared/StatePanel.tsx'
 import { parseAppRoute } from './routing/parse-app-route.ts'
 
@@ -46,14 +47,8 @@ function ImportRuntime() {
 
   if (!runtime.ok) {
     return (
-      <div className="oi-app">
-        <header className="oi-top" role="banner">
-          <p className="oi-mark">
-            <span className="oi-brand-mark" aria-hidden="true" />
-            OpenImport
-          </p>
-        </header>
-        <main className="oi-main">
+      <SiteChrome variant="workbench">
+        <main id="conteudo-principal" className="oi-main" tabIndex={-1}>
           <StatePanel
             code={runtime.code}
             tone="fail"
@@ -61,9 +56,10 @@ function ImportRuntime() {
             body={runtime.message}
             nextAction="Defina VITE_OPENIMPORT_API_BASE_URL e VITE_OPENIMPORT_PARENT_ORIGINS no ambiente do frontend."
             detail="A homepage e as páginas de erro não exigem essa configuração."
+            action={{ label: 'Ir para a página inicial', href: '/' }}
           />
         </main>
-      </div>
+      </SiteChrome>
     )
   }
 

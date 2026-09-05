@@ -260,7 +260,7 @@ describe('import flow mutations', () => {
       screen.getByRole('button', { name: /descartar alterações locais/i }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /reaplicar associações locais/i }),
+      screen.getByRole('button', { name: /reaplicar sobre versão atual/i }),
     ).toBeInTheDocument()
   })
 
@@ -312,7 +312,7 @@ describe('import flow mutations', () => {
     expect(selects[2]).toHaveValue('priceInCents')
 
     await user.click(
-      screen.getByRole('button', { name: /reaplicar associações locais/i }),
+      screen.getByRole('button', { name: /reaplicar sobre versão atual/i }),
     )
 
     expect(selects[2]).toHaveValue('priceInCents')

@@ -104,8 +104,10 @@ describe('ImportApp', () => {
 
     expect(await screen.findByText('Produtos')).toBeInTheDocument()
     expect(screen.getByText(/criada/i)).toBeInTheDocument()
-    expect(screen.getByText(/arquivo ainda não enviado/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/etapa atual: enviar arquivo/i)).toBeInTheDocument()
+    expect(
+      screen.getAllByText(/arquivo ainda não enviado/i).length,
+    ).toBeGreaterThan(0)
+    expect(screen.getByLabelText(/etapa atual: upload/i)).toBeInTheDocument()
   })
 
   it('renders uploaded session columns and mapping completeness', async () => {
@@ -138,7 +140,7 @@ describe('ImportApp', () => {
       screen.getByRole('navigation', { name: /falha no envio/i }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: /^Etapa atual: Enviar arquivo$/i }),
+      screen.queryByRole('navigation', { name: /^Etapa atual: Upload$/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -346,7 +348,9 @@ describe('ImportApp', () => {
 
     renderApp()
     postFromParent(initializeMessage())
-    expect(await screen.findByText(/arquivo ainda não enviado/i)).toBeInTheDocument()
+    expect(
+      (await screen.findAllByText(/arquivo ainda não enviado/i)).length,
+    ).toBeGreaterThan(0)
 
     postFromParent(initializeMessage({ accessToken: nextToken }))
     expect(await screen.findByText('produtos-calcados.csv')).toBeInTheDocument()

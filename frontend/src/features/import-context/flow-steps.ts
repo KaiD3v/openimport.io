@@ -1,6 +1,6 @@
 import type { ImportContext } from '../../api/import-context.schema.ts'
 
-export type FlowStepId = 'upload' | 'map' | 'review' | 'process'
+export type FlowStepId = 'upload' | 'map' | 'review' | 'process' | 'result'
 export type FlowStepState = 'done' | 'current' | 'upcoming' | 'failed'
 export type FlowPresentationKind = 'active' | 'interrupted'
 
@@ -17,10 +17,11 @@ export type FlowPresentation = {
 }
 
 export const FLOW_STEPS: Array<{ id: FlowStepId; label: string }> = [
-  { id: 'upload', label: 'Enviar arquivo' },
+  { id: 'upload', label: 'Upload' },
   { id: 'map', label: 'Mapear' },
   { id: 'review', label: 'Revisar' },
   { id: 'process', label: 'Processar' },
+  { id: 'result', label: 'Resultado' },
 ]
 
 const PROCESSING_STATUSES = new Set([
@@ -37,12 +38,11 @@ export function resolveFlowPresentation(
     return {
       kind: 'interrupted',
       navLabel: 'Falha no envio — sessão interrompida',
-      steps: [
-        { id: 'upload', label: 'Enviar arquivo', state: 'failed' },
-        { id: 'map', label: 'Mapear', state: 'upcoming' },
-        { id: 'review', label: 'Revisar', state: 'upcoming' },
-        { id: 'process', label: 'Processar', state: 'upcoming' },
-      ],
+      steps: FLOW_STEPS.map((step) => ({
+        id: step.id,
+        label: step.label,
+        state: step.id === 'upload' ? 'failed' : 'upcoming',
+      })),
     }
   }
 
@@ -50,17 +50,23 @@ export function resolveFlowPresentation(
     return {
       kind: 'interrupted',
       navLabel: 'Falha no processamento — sessão interrompida',
-      steps: [
-        { id: 'upload', label: 'Enviar arquivo', state: 'done' },
-        { id: 'map', label: 'Mapear', state: 'done' },
-        { id: 'review', label: 'Revisar', state: 'done' },
-        { id: 'process', label: 'Processar', state: 'failed' },
-      ],
+      steps: FLOW_STEPS.map((step) => ({
+        id: step.id,
+        label: step.label,
+        state:
+          step.id === 'process'
+            ? 'failed'
+            : step.id === 'result'
+              ? 'upcoming'
+              : 'done',
+      })),
     }
   }
 
   const current: FlowStepId = PROCESSING_STATUSES.has(context.import.status)
-    ? 'process'
+    ? context.import.status === 'ready'
+      ? 'result'
+      : 'process'
     : context.import.status === 'created'
       ? 'upload'
       : context.mapping.isComplete
@@ -68,26 +74,20 @@ export function resolveFlowPresentation(
         : 'map'
 
   const currentIndex = stepIndex(current)
-  const readyDone = context.import.status === 'ready'
 
   return {
     kind: 'active',
     navLabel: `Etapa atual: ${FLOW_STEPS[currentIndex]?.label ?? current}`,
-    steps: FLOW_STEPS.map((step, index) => {
-      if (readyDone && step.id === 'process') {
-        return { id: step.id, label: step.label, state: 'done' }
-      }
-      return {
-        id: step.id,
-        label: step.label,
-        state:
-          index === currentIndex
-            ? 'current'
-            : index < currentIndex
-              ? 'done'
-              : 'upcoming',
-      }
-    }),
+    steps: FLOW_STEPS.map((step, index) => ({
+      id: step.id,
+      label: step.label,
+      state:
+        index === currentIndex
+          ? 'current'
+          : index < currentIndex
+            ? 'done'
+            : 'upcoming',
+    })),
   }
 }
 

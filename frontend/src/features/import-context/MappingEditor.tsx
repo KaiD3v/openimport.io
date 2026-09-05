@@ -161,7 +161,7 @@ export function MappingEditor({
               className="oi-primary"
               onClick={() => dispatch({ type: 'rebaseLocalOntoRemote' })}
             >
-              Reaplicar associações locais
+              Reaplicar sobre versão atual
             </button>
           </div>
           <p className="oi-note">
@@ -180,6 +180,7 @@ export function MappingEditor({
               role="listitem"
             >
               <div className="oi-mapping-source">
+                <span className="oi-mapping-source-label">Coluna CSV</span>
                 <span className="oi-mapping-pos">#{column.position}</span>
                 <span className="oi-mapping-name">{column.name}</span>
               </div>
@@ -187,7 +188,7 @@ export function MappingEditor({
                 →
               </span>
               <label className="oi-mapping-target">
-                <span className="oi-mapping-target-label">Destino</span>
+                <span className="oi-mapping-target-label">Campo de destino</span>
                 <select
                   aria-label={`Destino da coluna ${column.position}`}
                   value={current}
@@ -252,17 +253,6 @@ export function MappingEditor({
         })}
       </div>
 
-      <div className="oi-inline-actions">
-        <button
-          type="button"
-          className="oi-primary"
-          disabled={!draft.dirty || blocked}
-          onClick={() => mutation.mutate()}
-        >
-          {mutation.isPending ? 'Salvando mapping…' : 'Salvar mapping'}
-        </button>
-      </div>
-
       {saveError ? (
         <div className="oi-inline-error" role="alert">
           <p>{saveError}</p>
@@ -274,6 +264,17 @@ export function MappingEditor({
           Salvando mapping…
         </p>
       ) : null}
+
+      <div className="oi-inline-actions oi-action-bar">
+        <button
+          type="button"
+          className="oi-primary"
+          disabled={!draft.dirty || blocked}
+          onClick={() => mutation.mutate()}
+        >
+          {mutation.isPending ? 'Salvando mapping…' : 'Salvar mapping'}
+        </button>
+      </div>
     </section>
   )
 }

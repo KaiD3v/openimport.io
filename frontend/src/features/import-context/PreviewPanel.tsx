@@ -158,11 +158,17 @@ function PreviewResult({ preview }: { preview: ImportPreview }) {
           </div>
           <div>
             <dt>Válidos</dt>
-            <dd className="oi-stat-ok">{preview.summary.validRows}</dd>
+            <dd className="oi-stat-ok">
+              {preview.summary.validRows}
+              <span className="oi-sr-only"> válidas</span>
+            </dd>
           </div>
           <div>
             <dt>Inválidos</dt>
-            <dd className="oi-stat-fail">{preview.summary.invalidRows}</dd>
+            <dd className="oi-stat-fail">
+              {preview.summary.invalidRows}
+              <span className="oi-sr-only"> inválidas</span>
+            </dd>
           </div>
           <div>
             <dt>Perfil</dt>
@@ -189,7 +195,7 @@ function PreviewResult({ preview }: { preview: ImportPreview }) {
       <section className="oi-preview-sample" aria-labelledby="oi-preview-sample-title">
         <h3 id="oi-preview-sample-title">Amostra</h3>
 
-        <div className="oi-preview-table-wrap" data-preview-layout="table">
+        <div className="oi-preview-table-wrap" data-preview-layout="table" tabIndex={0}>
           <table className="oi-preview-table">
             <caption className="oi-sr-only">Amostra do preview</caption>
             <thead>

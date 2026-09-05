@@ -15,12 +15,13 @@ describe('resolveFlowPresentation', () => {
 
     expect(presentation.kind).toBe('active')
     expect(presentation.steps).toEqual([
-      { id: 'upload', label: 'Enviar arquivo', state: 'current' },
+      { id: 'upload', label: 'Upload', state: 'current' },
       { id: 'map', label: 'Mapear', state: 'upcoming' },
       { id: 'review', label: 'Revisar', state: 'upcoming' },
       { id: 'process', label: 'Processar', state: 'upcoming' },
+      { id: 'result', label: 'Resultado', state: 'upcoming' },
     ])
-    expect(presentation.navLabel).toMatch(/enviar arquivo/i)
+    expect(presentation.navLabel).toMatch(/upload/i)
   })
 
   it('preserves map/review for uploaded incomplete mapping', () => {
@@ -59,12 +60,18 @@ describe('resolveFlowPresentation', () => {
     expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
       'current',
     )
+    expect(presentation.steps.find((step) => step.id === 'result')?.state).toBe(
+      'upcoming',
+    )
   })
 
-  it('marks process as done when ready', () => {
+  it('marks result as current when ready', () => {
     const presentation = resolveFlowPresentation(readyContext)
     expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
       'done',
+    )
+    expect(presentation.steps.find((step) => step.id === 'result')?.state).toBe(
+      'current',
     )
   })
 
@@ -73,6 +80,9 @@ describe('resolveFlowPresentation', () => {
     expect(presentation.kind).toBe('interrupted')
     expect(presentation.steps.find((step) => step.id === 'process')?.state).toBe(
       'failed',
+    )
+    expect(presentation.steps.find((step) => step.id === 'result')?.state).toBe(
+      'upcoming',
     )
   })
 
@@ -87,6 +97,6 @@ describe('resolveFlowPresentation', () => {
       'upcoming',
     )
     expect(presentation.navLabel).toMatch(/falha|interromp/i)
-    expect(presentation.navLabel).not.toMatch(/^Etapa atual: Enviar arquivo$/i)
+    expect(presentation.navLabel).not.toMatch(/^Etapa atual: Upload$/i)
   })
 })

@@ -63,6 +63,7 @@ export function LoadedImportView({
 
   return (
     <div className="oi-import-layout">
+      <h1 className="oi-sr-only">Bancada de importação</h1>
       <FlowSteps context={context} />
       <UploadFailedNotice context={context} />
       <SessionStrip context={context} />

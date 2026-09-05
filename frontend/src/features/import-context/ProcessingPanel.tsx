@@ -73,12 +73,18 @@ export function ProcessingPanel({
               <dd>{progress.processedRows}</dd>
             </div>
             <div>
-              <dt>Válidos</dt>
-              <dd className="oi-stat-ok">{progress.validRows}</dd>
-            </div>
-            <div>
-              <dt>Inválidos</dt>
-              <dd className="oi-stat-fail">{progress.invalidRows}</dd>
+            <dt>Válidos</dt>
+            <dd>
+              <span className="oi-stat-ok">{progress.validRows}</span>
+              <span className="oi-sr-only"> válidas</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Inválidos</dt>
+            <dd>
+              <span className="oi-stat-fail">{progress.invalidRows}</span>
+              <span className="oi-sr-only"> inválidas</span>
+            </dd>
             </div>
             <div>
               <dt>Total</dt>
@@ -105,7 +111,6 @@ export function ProcessingPanel({
     <section
       className="oi-workbench oi-workbench-primary"
       aria-labelledby="oi-processing-title"
-      aria-live="polite"
       data-testid="processing-panel"
     >
       <div className="oi-workbench-head">
@@ -116,6 +121,9 @@ export function ProcessingPanel({
           Acompanhando o worker. O mapping e o arquivo já estão congelados.
         </p>
       </div>
+      <p className="oi-sr-only" aria-live="polite">
+        {status === 'queued' ? 'Importação na fila.' : 'Processamento em andamento.'}
+      </p>
 
       {progress ? (
         <dl className="oi-stat-grid">
@@ -125,17 +133,23 @@ export function ProcessingPanel({
           </div>
           <div>
             <dt>Válidos</dt>
-            <dd className="oi-stat-ok">{progress.validRows}</dd>
+            <dd>
+              <span className="oi-stat-ok">{progress.validRows}</span>
+              <span className="oi-sr-only"> válidas</span>
+            </dd>
           </div>
           <div>
             <dt>Inválidos</dt>
-            <dd className="oi-stat-fail">{progress.invalidRows}</dd>
+            <dd>
+              <span className="oi-stat-fail">{progress.invalidRows}</span>
+              <span className="oi-sr-only"> inválidas</span>
+            </dd>
           </div>
           <div>
             <dt>Progresso</dt>
             <dd>
               {percent === null ? (
-                <span role="status">Em andamento (total ainda indisponível)</span>
+                <span>Em andamento (total ainda indisponível)</span>
               ) : (
                 <span>{percent}%</span>
               )}
@@ -156,7 +170,14 @@ export function ProcessingPanel({
           <div className="oi-progress-fill" style={{ width: `${percent}%` }} />
         </div>
       ) : (
-        <div className="oi-progress-track oi-progress-indeterminate" aria-hidden="true">
+        <div
+          className="oi-progress-track oi-progress-indeterminate"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-busy="true"
+          aria-label="Processamento em andamento, total ainda indisponível"
+        >
           <div className="oi-progress-fill" />
         </div>
       )}
@@ -169,9 +190,7 @@ export function ProcessingPanel({
           </button>
         </div>
       ) : (
-        <p className="oi-pending-row" role="status">
-          Atualizando status…
-        </p>
+        <p className="oi-pending-row">Atualizando status…</p>
       )}
     </section>
   )

@@ -14,11 +14,14 @@ describe('App routing', () => {
   it('renders homepage at / without requiring embed config', () => {
     renderAt('/')
     expect(
-      screen.getByRole('heading', { level: 1, name: 'OpenImport' }),
+      screen.getByRole('heading', {
+        level: 1,
+        name: /transforme csv em payloads confiáveis de api/i,
+      }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: /ver a transformação/i }),
-    ).toHaveAttribute('href', '#canvas')
+      screen.getAllByRole('link', { name: /abrir laboratório/i })[0],
+    ).toHaveAttribute('href', '/dev')
   })
 
   it('renders a dedicated 404 for unknown routes', () => {
@@ -37,6 +40,6 @@ describe('App routing', () => {
 
   it('enters the import shell for a valid import path', () => {
     renderAt(`/imports/${IMPORT_ID}`)
-    expect(screen.getByText(/csv → schema → json/i)).toBeInTheDocument()
+    expect(screen.getByText(/csv → mapping → json/i)).toBeInTheDocument()
   })
 })

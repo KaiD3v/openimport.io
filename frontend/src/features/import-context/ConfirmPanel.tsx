@@ -134,6 +134,18 @@ export function ConfirmPanel({
     mutation.mutate()
   }
 
+  const blockReason = !context.mapping.isComplete
+    ? 'Complete o mapping antes de confirmar.'
+    : mappingDirty
+      ? 'Há alterações locais no mapping. Salve e gere um novo preview antes de confirmar.'
+      : !preview
+        ? 'Gere um preview do mapping atual antes de confirmar.'
+        : preview && !previewFresh
+          ? 'O preview está desatualizado em relação ao mapping ou ao arquivo. Gere o preview novamente.'
+          : confirming || mutation.isPending
+            ? 'Confirmação em andamento.'
+            : null
+
   if (context.import.status !== 'uploaded') {
     return null
   }
@@ -153,30 +165,29 @@ export function ConfirmPanel({
         </p>
       </div>
 
-      {!context.mapping.isComplete ? (
-        <p className="oi-note">Complete o mapping antes de confirmar.</p>
-      ) : null}
-      {mappingDirty ? (
-        <p className="oi-note" role="status">
-          Há alterações locais no mapping. Salve e gere um novo preview antes de
-          confirmar.
-        </p>
-      ) : null}
-      {!preview ? (
-        <p className="oi-note">Gere um preview do mapping atual antes de confirmar.</p>
-      ) : null}
-      {preview && !previewFresh ? (
-        <p className="oi-note" role="status">
-          O preview está desatualizado em relação ao mapping ou ao arquivo.
-          Gere o preview novamente.
+      {blockReason ? (
+        <p className="oi-note" role="status" id="oi-confirm-block">
+          {blockReason}
         </p>
       ) : null}
 
-      <div className="oi-inline-actions">
+      {errorCopy ? (
+        <div className="oi-inline-error" role="alert">
+          <p>
+            <strong>{errorCopy.title}.</strong> {errorCopy.body}
+          </p>
+          <p className="oi-support">
+            {[errorCopy.code, errorCopy.traceId].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="oi-inline-actions oi-action-bar">
         <button
           type="button"
           className="oi-primary"
           disabled={!canConfirm || mutation.isPending}
+          aria-describedby={blockReason ? 'oi-confirm-block' : undefined}
           onClick={submitConfirm}
         >
           {mutation.isPending || confirming
@@ -194,17 +205,6 @@ export function ConfirmPanel({
           </button>
         ) : null}
       </div>
-
-      {errorCopy ? (
-        <div className="oi-inline-error" role="alert">
-          <p>
-            <strong>{errorCopy.title}.</strong> {errorCopy.body}
-          </p>
-          <p className="oi-support">
-            {[errorCopy.code, errorCopy.traceId].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-      ) : null}
     </section>
   )
 }
