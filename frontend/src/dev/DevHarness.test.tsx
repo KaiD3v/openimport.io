@@ -44,16 +44,45 @@ describe('DevHarness console', () => {
     })
   })
 
-  it('marks the selected fixture visually', async () => {
+  it('places the QA canvas before the full fixture wall', () => {
+    render(<DevHarness />)
+
+    const canvas = screen.getByLabelText(/canvas de qa/i)
+    const advanced = screen.getByTestId('openimport-lab-fixtures-advanced')
+    const picker = screen.getByLabelText(/seletor rápido de fixture/i)
+
+    expect(
+      picker.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(
+      canvas.compareDocumentPosition(advanced) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('keeps complete fixture groups collapsed until opened', () => {
+    render(<DevHarness />)
+
+    const advanced = screen.getByTestId('openimport-lab-fixtures-advanced')
+    const groups = advanced.querySelectorAll('details')
+    expect(groups.length).toBeGreaterThan(1)
+    for (const group of groups) {
+      expect(group.open).toBe(false)
+    }
+  })
+
+  it('marks the selected fixture visually from the compact picker', async () => {
     const user = userEvent.setup()
     render(<DevHarness />)
-    const fixtureButton = screen.getByRole('button', {
-      name: /created — pronta para upload/i,
-    })
-    await user.click(fixtureButton)
-    expect(fixtureButton).toHaveAttribute('aria-pressed', 'true')
+    await user.selectOptions(
+      screen.getByLabelText(/seletor rápido de fixture/i),
+      'created',
+    )
     expect(screen.getByTestId('openimport-visual-fixture')).toHaveAttribute(
       'data-fixture-id',
+      'created',
+    )
+    expect(screen.getByLabelText(/seletor rápido de fixture/i)).toHaveValue(
       'created',
     )
   })

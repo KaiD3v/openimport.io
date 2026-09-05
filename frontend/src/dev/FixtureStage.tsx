@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { rejectedRowsQueryKey } from '../api/query-key.ts'
 import type { ImportPreview } from '../api/operation-schemas.ts'
 import { LoadedImportView } from '../features/import-context/LoadedImportView.tsx'
+import { SiteChrome } from '../features/shared/SiteChrome.tsx'
 import { StatePanel } from '../features/shared/StatePanel.tsx'
 import type { VisualFixture } from './visual-fixtures.ts'
 
@@ -76,7 +77,7 @@ function PreviewResult({ preview }: { preview: ImportPreview }) {
         aria-labelledby="oi-fixture-sample-title"
       >
         <h3 id="oi-fixture-sample-title">Amostra</h3>
-        <div className="oi-preview-table-wrap" data-preview-layout="table">
+        <div className="oi-preview-table-wrap" data-preview-layout="table" tabIndex={0}>
           <table className="oi-preview-table">
             <thead>
               <tr>
@@ -239,7 +240,7 @@ function PresentationOverlays({
               Descartar alterações locais
             </button>
             <button type="button" className="oi-primary">
-              Reaplicar associações locais
+              Reaplicar sobre versão atual
             </button>
           </div>
         </div>
@@ -341,17 +342,12 @@ export function FixtureStage({
         data-testid="openimport-visual-fixture"
         data-fixture-id={fixture.id}
       >
-        <div className="oi-app">
-          <header className="oi-top" role="banner">
-            <p className="oi-mark">OpenImport</p>
-            <p className="oi-tag">CSV → schema → JSON</p>
-            {importId ? (
-              <p className="oi-id">
-                <span>Sessão</span> {importId}
-              </p>
-            ) : null}
-          </header>
-          <main className="oi-main">
+        <SiteChrome
+          variant="workbench"
+          importId={importId}
+          statusLabel="CSV → mapping → JSON"
+        >
+          <main id="conteudo-principal" className="oi-main" tabIndex={-1}>
             {fixture.kind === 'shell' ? (
               <ShellPanel
                 variant={fixture.variant}
@@ -375,7 +371,7 @@ export function FixtureStage({
               </>
             )}
           </main>
-        </div>
+        </SiteChrome>
       </div>
     </QueryClientProvider>
   )

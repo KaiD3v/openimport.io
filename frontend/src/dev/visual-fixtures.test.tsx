@@ -90,7 +90,7 @@ describe('visual fixtures', () => {
       screen.getAllByText(/codigo_sku_fornecedor_principal/i).length,
     ).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: /salvar mapping/i })).toBeInTheDocument()
-    expect(screen.getAllByText(/^Destino$/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/campo de destino/i).length).toBeGreaterThan(0)
   })
 
   it('shows upload controls for created sessions', () => {

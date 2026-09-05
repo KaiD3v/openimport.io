@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assertImportAccessToken } from '../embed/import-token.ts'
+import { SiteChrome } from '../features/shared/SiteChrome.tsx'
 import { parseImportIdFromPath } from '../routing/parse-import-path.ts'
 import { FixtureStage } from './FixtureStage.tsx'
 import {
@@ -173,14 +174,21 @@ export function DevHarness() {
   }
 
   return (
-    <div className="oi-lab" data-testid="openimport-dev-harness">
-      <header className="oi-lab-header">
+    <SiteChrome variant="lab">
+      <main
+        id="conteudo-principal"
+        className="oi-lab-body"
+        tabIndex={-1}
+        data-testid="openimport-dev-harness"
+      >
+      <section className="oi-lab-header" aria-labelledby="oi-lab-title">
         <div>
           <p className="oi-lab-badge">DEV</p>
-          <h1>OpenImport Lab</h1>
+          <h1 id="oi-lab-title">Laboratório OpenImport</h1>
           <p className="oi-lab-lead">
-            Console interno de QA. Credenciais ficam só nesta aba e nunca vão
-            para a URL do iframe.
+            Console interno de QA para inicializar o iframe com token local.
+            Credenciais ficam só nesta aba e nunca vão para a URL do iframe,
+            storage ou o log.
           </p>
         </div>
         <dl className="oi-lab-status">
@@ -197,17 +205,16 @@ export function DevHarness() {
             <dd>{previewId ? `fixture:${previewId}` : iframePath ? 'iframe' : 'idle'}</dd>
           </div>
         </dl>
-      </header>
+      </section>
 
       <div className="oi-lab-layout">
-        <aside className="oi-lab-side">
-          <form
-            className="oi-lab-panel"
-            onSubmit={(event) => {
-              event.preventDefault()
-              loadFrame()
-            }}
-          >
+        <form
+          className="oi-lab-panel oi-lab-creds"
+          onSubmit={(event) => {
+            event.preventDefault()
+            loadFrame()
+          }}
+        >
             <h2>Credenciais</h2>
             <label className="oi-lab-field">
               <span>importId</span>
@@ -236,6 +243,7 @@ export function DevHarness() {
               <span>token temporário</span>
               <div className="oi-lab-token-row">
                 <input
+                  id="oi-lab-token"
                   aria-label="token temporário"
                   type={tokenVisible ? 'text' : 'password'}
                   value={accessToken}
@@ -247,6 +255,8 @@ export function DevHarness() {
                 <button
                   type="button"
                   className="oi-secondary"
+                  aria-pressed={tokenVisible}
+                  aria-controls="oi-lab-token"
                   onClick={() => setTokenVisible((value) => !value)}
                 >
                   {tokenVisible ? 'Ocultar token' : 'Mostrar token'}
@@ -282,41 +292,35 @@ export function DevHarness() {
             </div>
           </form>
 
-          <section className="oi-lab-panel" aria-labelledby="oi-lab-fixtures-title">
-            <h2 id="oi-lab-fixtures-title">Fixtures</h2>
+        <div className="oi-lab-panel oi-lab-quick">
+          <h2 id="oi-lab-quick-title">Fixture rápida</h2>
+          <p className="oi-lab-hint">Selecionar por label</p>
+          <select
+            aria-label="Seletor rápido de fixture"
+            value={previewId ?? ''}
+            onChange={(event) => {
+              const next = event.target.value
+              setIframePath(null)
+              setIframeReady(false)
+              setPreviewId(next ? (next as VisualFixtureId) : null)
+            }}
+          >
+            <option value="">Canvas vazio</option>
             {FIXTURE_GROUPS.map((group) => (
-              <div key={group.title} className="oi-lab-fixture-group">
-                <h3>{group.title}</h3>
-                <div className="oi-lab-fixture-list">
-                  {group.ids.map((id) => {
-                    const fixture = VISUAL_FIXTURES.find((entry) => entry.id === id)
-                    if (!fixture) return null
-                    const selected = previewId === fixture.id
-                    return (
-                      <button
-                        key={fixture.id}
-                        type="button"
-                        className={
-                          selected
-                            ? 'oi-lab-fixture oi-lab-fixture-selected'
-                            : 'oi-lab-fixture'
-                        }
-                        aria-pressed={selected}
-                        onClick={() => {
-                          setIframePath(null)
-                          setIframeReady(false)
-                          setPreviewId(fixture.id)
-                        }}
-                      >
-                        {fixture.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              <optgroup key={group.title} label={group.title}>
+                {group.ids.map((id) => {
+                  const fixture = VISUAL_FIXTURES.find((entry) => entry.id === id)
+                  if (!fixture) return null
+                  return (
+                    <option key={fixture.id} value={fixture.id}>
+                      {fixture.label}
+                    </option>
+                  )
+                })}
+              </optgroup>
             ))}
-          </section>
-        </aside>
+          </select>
+        </div>
 
         <section className="oi-lab-main" aria-label="Canvas de QA">
           <div className="oi-lab-canvas-bar">
@@ -366,13 +370,52 @@ export function DevHarness() {
                 <p className="oi-state-code">LAB.EMPTY</p>
                 <h2>Nenhuma sessão no canvas</h2>
                 <p>
-                  Carregue um iframe com importId válido ou selecione uma
-                  fixture sintética à esquerda.
+                  Carregue um iframe com importId válido ou escolha uma fixture
+                  no seletor rápido.
                 </p>
               </div>
             )}
           </div>
         </section>
+
+        <aside
+          className="oi-lab-advanced"
+          aria-labelledby="oi-lab-fixtures-title"
+          data-testid="openimport-lab-fixtures-advanced"
+        >
+          <h2 id="oi-lab-fixtures-title">Fixtures avançadas</h2>
+          {FIXTURE_GROUPS.map((group) => (
+            <details key={group.title} className="oi-lab-fixture-group">
+              <summary>{group.title}</summary>
+              <div className="oi-lab-fixture-list">
+                {group.ids.map((id) => {
+                  const fixture = VISUAL_FIXTURES.find((entry) => entry.id === id)
+                  if (!fixture) return null
+                  const selected = previewId === fixture.id
+                  return (
+                    <button
+                      key={fixture.id}
+                      type="button"
+                      className={
+                        selected
+                          ? 'oi-lab-fixture oi-lab-fixture-selected'
+                          : 'oi-lab-fixture'
+                      }
+                      aria-pressed={selected}
+                      onClick={() => {
+                        setIframePath(null)
+                        setIframeReady(false)
+                        setPreviewId(fixture.id)
+                      }}
+                    >
+                      {fixture.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </details>
+          ))}
+        </aside>
 
         <aside className="oi-lab-log-panel" aria-label="Event log">
           <h2>Event log</h2>
@@ -396,6 +439,7 @@ export function DevHarness() {
           </ol>
         </aside>
       </div>
-    </div>
+      </main>
+    </SiteChrome>
   )
 }

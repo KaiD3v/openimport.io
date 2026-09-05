@@ -18,6 +18,7 @@ describe('development harness isolation', () => {
 
     expect(main).not.toContain('openimport-dev-harness')
     expect(main).not.toContain('OpenImport Lab')
+    expect(main).not.toContain('Laboratório OpenImport')
     expect(main).not.toContain('Harness de desenvolvimento')
   })
 

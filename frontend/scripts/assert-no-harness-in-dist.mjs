@@ -5,6 +5,7 @@ const dist = join(process.cwd(), 'dist')
 const forbidden = [
   'openimport-dev-harness',
   'OpenImport Lab',
+  'Laboratório OpenImport',
   'Harness de desenvolvimento',
   'Inicializar sessão',
   'Carregar iframe',
