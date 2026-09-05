@@ -4,6 +4,14 @@ Base da API de negócio: `/api/v1`. Rotas de negócio exigem `Authorization: Bea
 
 JSON é estrito: propriedades desconhecidas e tipos incompatíveis são rejeitados com `400 VALIDATION.FAILED`; não há conversão implícita de tipos nos DTOs de entrada. Respostas de erro seguem `{ code, message, details?, traceId }`; toda resposta traz `X-Request-ID`, igual a `traceId` em erros. Um `X-Request-ID` de entrada só é preservado se tiver 1–128 caracteres `[A-Za-z0-9._-]`.
 
+Rate limiting (Redis, janela fixa) aplica-se a rotas de negócio:
+
+- **Pré-auth (por IP):** antes do lookup de Bearer; cobre ausência/invalidade de credencial.
+- **Pós-auth (por identidade estável):** `organizationId` + `apiKeyId` ou `accessTokenId` — nunca o token bruto.
+- Tiers: geral, upload, preview, confirmação, emissão de import token, webhook.
+- Ao exceder: `429 RATE_LIMIT.EXCEEDED` com `Retry-After` (segundos) e `traceId`. Health (`/health*`) é isento.
+- Redis indisponível no limiter: `503 SERVICE.UNAVAILABLE` genérico (sem URL Redis).
+
 O OpenAPI gerado em `/docs-json` é a fonte complementar de tipos. `/docs` e `/docs-json` existem fora de produção, ou em produção com `ENABLE_DOCS=true`.
 
 ## Health

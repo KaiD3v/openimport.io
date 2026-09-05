@@ -16,14 +16,15 @@ Estas decisões descrevem o estado observado no repositório; não atribuem auto
 | Perfil monetário explícito | `pt-BR-v1` transforma unidades em centavos e evita inferência de locale. |
 | Limites separados | Bytes, rows, columns, fields, records, batch de persistência e resposta de preview têm controles distintos. |
 | Parser sem API privada | Streaming usa componentes públicos e `csv-parse`, com scanner/coalescedor próprio. |
+| Rate limit HTTP Redis | `PreAuthRateLimitGuard` (IP) + `PostAuthRateLimitGuard` (org + apiKeyId/accessTokenId + tier); store Redis com TTL (`openimport:rl:*`). |
 
 ## Limitações conhecidas
 
-Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção de `ImportRecord`/results/webhook deliveries, nem dashboard de webhooks/multi-evento. Retenção automática remove só o CSV no object storage após TTL para `ready`/`processing_failed`; não limpa órfãos sem `storageObjectKey` nem aplica lifecycle nativo do bucket.
+Não há listagem, histórico, cancelamento, DLQ completa, XLSX, outros encodings/delimitadores, tipos além de string/integer/currency, retenção de `ImportRecord`/results/webhook deliveries, nem dashboard de webhooks/multi-evento. Retenção automática remove só o CSV no object storage após TTL para `ready`/`processing_failed`; não limpa órfãos sem `storageObjectKey` nem aplica lifecycle nativo do bucket. Rate limit HTTP é compartilhado via Redis; TLS e backup ficam fora do Compose. Timeouts HTTP: `headersTimeout` (com `connectionsCheckingInterval` curto) encerra headers incompletos; body/multipart parado após o dispatch usa inatividade de socket (`server.timeout` = `HTTP_REQUEST_TIMEOUT_MS`); `requestTimeout` não cancela handler depois do body completo.
 
 ## Próximos passos possíveis, não comprometidos
 
-- Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e rate limiting.
+- Autenticação de usuário, gestão/rotação de API keys, RBAC, auditoria e painel de quotas de rate limit.
 - DLQ/bull-board e processo worker dedicado.
 - Retenção/exclusão de sessões e registros no PostgreSQL; lifecycle de bucket para órfãos.
 - Listagem/histórico, XLSX e perfis de normalização adicionais.

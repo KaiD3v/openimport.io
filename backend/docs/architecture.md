@@ -12,7 +12,7 @@ O backend NestJS expõe uma API multi-tenant. A organização vem da credencial 
 - `ObjectStorageModule`: porta `OBJECT_STORAGE`; `S3ObjectStorage` é o adaptador S3/MinIO.
 - Redis + BullMQ: filas `import-processing` e `webhook-delivery`. Desenvolvimento usa Redis DB 0 (`REDIS_URL=.../0`); E2E usa DB 15 para não cruzar jobs com `start:prod`/`start:dev`.
 - `DatabaseModule`: `PrismaService` com adapter PostgreSQL.
-- HTTP transversal: Helmet, CORS, validation pipe estrita, Pino, request ID e filtro de exceções.
+- HTTP transversal: Helmet, CORS, validation pipe estrita, Pino, request ID, filtro de exceções, timeouts HTTP (`headersTimeout` + `connectionsCheckingInterval`, `requestTimeout`, socket `timeout` para body parado, `keepAliveTimeout`, `maxRequestsPerSocket`) e rate limit Redis em duas fases (`PreAuthRateLimitGuard` por IP antes da autenticação; `PostAuthRateLimitGuard` por identidade estável + tier depois).
 
 Controllers recebem HTTP/DTOs, serviços aplicam regras e orquestram fluxos, repositories mantêm queries escopadas por organização. A validação global rejeita propriedades não permitidas com `400`, proíbe valores desconhecidos e transforma apenas os tipos previstos pelos DTOs.
 

@@ -2,12 +2,12 @@
 
 ## Requisitos confirmados
 
-- Node.js 24 (documentado; o manifesto não impõe `engines`).
+- Node.js 24 (`.nvmrc` / `.node-version` na raiz; o manifesto não impõe `engines`).
 - npm e Docker Compose.
 - PostgreSQL 17 (`postgres:17-alpine`), MinIO compatível com S3 e Redis 7.4 (`redis:7.4.2-alpine`), fornecidos pelo Compose da raiz.
 - O backend é ESM, NestJS 12, Prisma 7, TypeScript 6, Vitest 4, BullMQ (versões no `package.json`).
 
-Não há Dockerfile, CI, `.nvmrc` ou `.node-version` versionados.
+Self-host e CI: ver [Deployment](../../docs/deployment.md) e `.github/workflows/ci.yml`.
 
 ## Bancos e variáveis
 
@@ -90,6 +90,42 @@ npm run build
 ```
 
 Em Bash, os mesmos comandos `npm` são idênticos. Diagnóstico e limites ficam em [Testes e troubleshooting](testing-and-troubleshooting.md).
+
+## Comandos equivalentes à CI
+
+Backend:
+
+```powershell
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run test:e2e
+npm run build
+```
+
+Frontend:
+
+```powershell
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+Node.js 24 é a versão de referência (ver `.nvmrc` / `.node-version` na raiz).
+
+Self-host (Compose de produção, sem portas de infra públicas):
+
+```powershell
+docker compose -f docker-compose.yml config --quiet
+docker compose -f docker-compose.production.yml --env-file .env.production.example config --quiet
+node scripts/check-license.mjs
+node scripts/smoke-production.mjs
+```
+
+O smoke gera segredos efêmeros, aplica `prisma migrate deploy` em banco vazio e não executa seed. Detalhes em [Deployment](../../docs/deployment.md).
 
 ## Endereços locais
 
