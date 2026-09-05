@@ -22,22 +22,28 @@ export function readRuntimeConfig(env: ImportMetaEnv): RuntimeConfigResult {
     }
   }
 
-  let parsedUrl: URL
-  try {
-    parsedUrl = new URL(apiBaseUrl)
-  } catch {
-    return {
-      ok: false,
-      code: 'OPENIMPORT.INVALID_API_BASE_URL',
-      message: 'VITE_OPENIMPORT_API_BASE_URL precisa ser uma URL absoluta.',
-    }
-  }
+  const isSameOriginPath =
+    apiBaseUrl.startsWith('/') && !apiBaseUrl.startsWith('//')
 
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return {
-      ok: false,
-      code: 'OPENIMPORT.INVALID_API_BASE_URL',
-      message: 'A base da API precisa usar http ou https.',
+  if (!isSameOriginPath) {
+    let parsedUrl: URL
+    try {
+      parsedUrl = new URL(apiBaseUrl)
+    } catch {
+      return {
+        ok: false,
+        code: 'OPENIMPORT.INVALID_API_BASE_URL',
+        message:
+          'VITE_OPENIMPORT_API_BASE_URL precisa ser uma URL absoluta ou um caminho /api/v1.',
+      }
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return {
+        ok: false,
+        code: 'OPENIMPORT.INVALID_API_BASE_URL',
+        message: 'A base da API precisa usar http ou https.',
+      }
     }
   }
 
