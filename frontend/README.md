@@ -4,7 +4,7 @@ Interface embarcada do OpenImport: token temporário por `postMessage`, contexto
 
 ## Identidade visual
 
-Ficha operacional de recebimento — papel frio de armazém, trilho Upload → Mapear → Revisar, células de associação. Tipografia IBM Plex Sans e IBM Plex Mono. Sem dashboard, sidebar, glassmorphism ou API key no navegador.
+Bancada técnica OpenImport Data Workbench — fundo `--ink` (#0b0f14), painéis `--panel` (#141b24), texto `--chalk`, metadados `--mist`, ação `--phosphor`, sinal `--signal`. Tipografia IBM Plex Sans Condensed nos títulos, Sans no corpo e Mono em IDs, status e JSON. Sem dashboard SaaS, glassmorphism ou API key no navegador.
 
 ## Desenvolvimento
 
@@ -37,6 +37,7 @@ QA visual sem token: seção **Pré-visualização visual** ou `/dev?fixture=<id
 | --- | --- |
 | `VITE_OPENIMPORT_API_BASE_URL` | Base HTTP, em geral `http://localhost:3000/api/v1` |
 | `VITE_OPENIMPORT_PARENT_ORIGINS` | Origens explícitas do host (sem wildcard) |
+| `VITE_OPENIMPORT_REPOSITORY_URL` | URL pública do repositório (header/footer). Vazia esconde os links. |
 
 ## Protocolo embed
 
