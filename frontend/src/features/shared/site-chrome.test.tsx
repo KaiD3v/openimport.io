@@ -86,6 +86,24 @@ describe('SiteChrome', () => {
     expect(author).toHaveTextContent('Desenvolvido por KaiD3v')
   })
 
+  it('keeps lab chrome free of marketing nav and uses a lab protocol footer', () => {
+    renderChrome('lab')
+
+    expect(
+      screen.queryByRole('link', { name: /abrir laboratório/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('navigation', { name: /principal/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/OPENIMPORT:\/\/LAB/i)).toBeInTheDocument()
+    expect(
+      screen.queryByText(/OPENIMPORT:\/\/SELF-HOSTED/i),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: /desenvolvido por kaid3v/i }),
+    ).not.toBeInTheDocument()
+  })
+
   it('does not render a broken repository label when no GitHub URL is passed through', () => {
     renderChrome()
 

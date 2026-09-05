@@ -33,4 +33,18 @@ describe('global chrome CSS', () => {
     expect(css).toMatch(/grid-template-areas:/)
     expect(css).not.toMatch(/hamburger/i)
   })
+
+  it('treats the lab as a flush instrument grid with canvas before side panels', () => {
+    expect(css).toMatch(
+      /\.oi-lab-layout\s*\{[^}]*grid-template-areas:\s*"actions"\s*"main"\s*"creds"\s*"fixtures"\s*"log"/s,
+    )
+    expect(css).toMatch(/@media \(min-width: 768px\)[\s\S]*\.oi-lab-layout/)
+    expect(css).toMatch(
+      /"actions main"\s*"creds main"\s*"fixtures log"/s,
+    )
+    expect(css).toMatch(
+      /"actions main log"\s*"creds main log"\s*"fixtures main log"/s,
+    )
+    expect(css).not.toMatch(/\.oi-lab-panel\s*\{[^}]*margin-bottom/s)
+  })
 })

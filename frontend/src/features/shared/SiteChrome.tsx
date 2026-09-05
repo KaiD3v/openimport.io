@@ -96,7 +96,7 @@ export function SiteHeader({
               </p>
             ) : null}
           </div>
-        ) : (
+        ) : variant === 'lab' ? null : (
           <>
             {import.meta.env.DEV ? (
               <a
@@ -119,7 +119,19 @@ export function SiteHeader({
   )
 }
 
-export function SiteFooter() {
+export function SiteFooter({
+  variant = 'site',
+}: {
+  variant?: SiteChromeProps['variant']
+}) {
+  if (variant === 'lab') {
+    return (
+      <footer className="oi-site-footer oi-site-footer-lab" role="contentinfo">
+        <p className="oi-footer-protocol">OPENIMPORT://LAB</p>
+      </footer>
+    )
+  }
+
   return (
     <footer className="oi-site-footer" role="contentinfo">
       <div className="oi-chrome-footer-inner">
@@ -180,7 +192,7 @@ export function SiteChrome({
         statusLabel={statusLabel}
       />
       {children}
-      <SiteFooter />
+      <SiteFooter variant={variant} />
     </div>
   )
 }
