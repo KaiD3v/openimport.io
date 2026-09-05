@@ -203,6 +203,7 @@ Os volumes do Compose (Postgres, Redis, MinIO) permanecem. `docker compose down 
 
 | Público | Onde |
 | --- | --- |
+| Integração no host (UI `/docs`) | http://localhost:5173/docs (com o frontend em `npm run dev`) |
 | Backend (setup, API, arquitetura) | [`backend/README.md`](backend/README.md) e [`backend/docs/README.md`](backend/docs/README.md) |
 | Frontend (embed, `/dev`, template do lab) | [`frontend/README.md`](frontend/README.md) |
 | Fixtures (JSON/CSV do laboratório) | [`backend/docs/examples/README.md`](backend/docs/examples/README.md) |

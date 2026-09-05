@@ -16,6 +16,8 @@ npm run dev
 
 Rota da importação: `/imports/:importId`.
 
+Documentação pública de integração (host JS/Node, passo a passo): **`/docs`**.
+
 Harness de desenvolvimento: `/dev` (ausente do build de produção). Token só em memória, nunca na query string. Em `npm run dev`, **Criar sessão** pede ao Vite (Node) para emitir `importId` + `oi_import_` com a seed do backend — a `oi_live_` não entra no bundle.
 
 O botão lê [`../backend/docs/examples/products-template.json`](../backend/docs/examples/products-template.json) em cada clique (sem reiniciar o Vite). Edite `name` e `fields` nesse arquivo para mudar o template da sessão. `type` é `string`, `integer` ou `currency`; `key` camelCase ASCII a começar em minúscula. O lab grava o template como `<name> lab <timestamp>`. CSV de teste na mesma pasta (`products-valid.csv`, `products-invalid.csv`) deve seguir as `key`. Outro caminho de arquivo: `defaultTemplatePath` em [`scripts/create-lab-session.mjs`](scripts/create-lab-session.mjs), depois reinicie `npm run dev`. Não há seletor de template no `/dev`.
@@ -39,7 +41,7 @@ QA visual sem token: seletor **Fixtures** no laboratório ou `/dev?fixture=<id>`
 | --- | --- |
 | `VITE_OPENIMPORT_API_BASE_URL` | Base HTTP, em geral `http://localhost:3000/api/v1` |
 | `VITE_OPENIMPORT_PARENT_ORIGINS` | Origens explícitas do host (sem wildcard) |
-| `VITE_OPENIMPORT_REPOSITORY_URL` | URL pública do repositório (header/footer). Vazia esconde os links. |
+| `VITE_OPENIMPORT_REPOSITORY_URL` | URL pública do repositório (header/footer/docs). Ex.: `https://github.com/KaiD3v/openimport.io` |
 
 ## Protocolo embed
 
