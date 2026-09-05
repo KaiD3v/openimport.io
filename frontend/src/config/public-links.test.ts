@@ -34,7 +34,7 @@ describe('public links', () => {
     expect(readRepositoryUrl('javascript:alert(1)')).toBeNull()
   })
 
-  it('does not invent a GitHub fallback in source or env examples', () => {
+  it('documents the published repository URL in env examples without hardcoding a fallback in source', () => {
     const moduleSource = readFileSync(
       join(frontendRoot, 'src/config/public-links.ts'),
       'utf8',
@@ -46,9 +46,12 @@ describe('public links', () => {
     )
 
     expect(moduleSource).not.toContain('github.com/KaiD3v/openimport.io')
-    expect(envExample).not.toContain('github.com/KaiD3v/openimport.io')
-    expect(envExample).toContain('VITE_OPENIMPORT_REPOSITORY_URL=')
-    expect(productionExample).toContain('VITE_OPENIMPORT_REPOSITORY_URL')
+    expect(envExample).toContain(
+      'VITE_OPENIMPORT_REPOSITORY_URL=https://github.com/KaiD3v/openimport.io',
+    )
+    expect(productionExample).toContain(
+      'VITE_OPENIMPORT_REPOSITORY_URL=https://github.com/KaiD3v/openimport.io',
+    )
   })
 
   it('uses a safe rel for external targets', () => {
