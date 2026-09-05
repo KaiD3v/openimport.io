@@ -29,5 +29,9 @@ describe('development harness isolation', () => {
     )
 
     expect(harness).toMatch(/visual-fixtures|Fixtures/)
+    expect(harness).toContain('/__openimport/lab-session')
+    expect(harness).not.toContain('create-lab-session.mjs')
+    expect(harness).not.toContain('read-seed-api-key')
+    expect(harness).not.toContain('SEED_API_KEY')
   })
 })

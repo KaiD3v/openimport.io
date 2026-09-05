@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { assertImportAccessToken } from '../embed/import-token.ts'
 import { SiteChrome } from '../features/shared/SiteChrome.tsx'
 import { parseImportIdFromPath } from '../routing/parse-import-path.ts'
@@ -80,8 +80,11 @@ export function DevHarness() {
       : null
   })
   const [viewportHint, setViewportHint] = useState('auto')
+  const [labPending, setLabPending] = useState(false)
+  const [labError, setLabError] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const seqRef = useRef(0)
+  const autoInitRef = useRef(false)
 
   const parsedId = useMemo(
     () => parseImportIdFromPath(`/imports/${importId}`),
@@ -106,14 +109,14 @@ export function DevHarness() {
     parsedId.ok &&
     tokenCheck.ok
 
-  function pushEvent(text: string) {
+  const pushEvent = useCallback((text: string) => {
     seqRef.current += 1
     const at = new Date().toISOString().slice(11, 19)
     setEvents((current) => [
       ...current,
       { seq: seqRef.current, at, text },
     ])
-  }
+  }, [])
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -140,7 +143,7 @@ export function DevHarness() {
     return () => {
       window.removeEventListener('message', onMessage)
     }
-  }, [])
+  }, [pushEvent])
 
   function loadFrame() {
     if (!parsedId.ok) {
@@ -151,7 +154,7 @@ export function DevHarness() {
     setIframePath(`/imports/${parsedId.importId}`)
   }
 
-  function initialize() {
+  const initialize = useCallback(() => {
     const frame = iframeRef.current?.contentWindow
     if (!frame || !parsedId.ok || !tokenCheck.ok || !canInitialize) {
       return
@@ -167,6 +170,74 @@ export function DevHarness() {
       window.location.origin,
     )
     pushEvent('host → openimport.initialize')
+  }, [accessToken, canInitialize, parsedId, pushEvent, tokenCheck])
+
+  useEffect(() => {
+    if (!autoInitRef.current || !canInitialize) {
+      return
+    }
+    autoInitRef.current = false
+    initialize()
+  }, [canInitialize, initialize])
+
+  async function createLabSessionFromHarness() {
+    setLabError(null)
+    setLabPending(true)
+    try {
+      const response = await fetch('/__openimport/lab-session', {
+        method: 'POST',
+      })
+      const payload: unknown = await response.json().catch(() => null)
+      const messageFromBody =
+        payload &&
+        typeof payload === 'object' &&
+        'message' in payload &&
+        typeof payload.message === 'string'
+          ? payload.message
+          : null
+      if (!response.ok) {
+        throw new Error(
+          messageFromBody ??
+            'Não foi possível criar a sessão de laboratório.',
+        )
+      }
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        !('importId' in payload) ||
+        !('accessToken' in payload) ||
+        typeof payload.importId !== 'string' ||
+        typeof payload.accessToken !== 'string'
+      ) {
+        throw new Error('Não foi possível criar a sessão de laboratório.')
+      }
+
+      const parsed = parseImportIdFromPath(`/imports/${payload.importId}`)
+      const token = assertImportAccessToken(payload.accessToken)
+      if (!parsed.ok || !token.ok) {
+        throw new Error('Não foi possível criar a sessão de laboratório.')
+      }
+
+      setPreviewId(null)
+      setImportId(parsed.importId)
+      setAccessToken(payload.accessToken)
+      setIframeReady(false)
+      autoInitRef.current = true
+      setIframePath(`/imports/${parsed.importId}`)
+      pushEvent('lab-session criada')
+    } catch (error) {
+      autoInitRef.current = false
+      const fallback = 'Não foi possível criar a sessão de laboratório.'
+      setLabError(
+        error instanceof TypeError
+          ? fallback
+          : error instanceof Error
+            ? error.message
+            : fallback,
+      )
+    } finally {
+      setLabPending(false)
+    }
   }
 
   if (soloPreview && previewFixture) {
@@ -182,144 +253,66 @@ export function DevHarness() {
         data-testid="openimport-dev-harness"
       >
       <section className="oi-lab-header" aria-labelledby="oi-lab-title">
-        <div>
+        <div className="oi-lab-header-row">
           <p className="oi-lab-badge">DEV</p>
           <h1 id="oi-lab-title">Laboratório OpenImport</h1>
-          <p className="oi-lab-lead">
-            Console interno de QA para inicializar o iframe com token local.
-            Credenciais ficam só nesta aba e nunca vão para a URL do iframe,
-            storage ou o log.
+          <p className="oi-lab-mode">
+            {previewId ? `fixture:${previewId}` : iframePath ? 'iframe' : 'idle'}
           </p>
         </div>
-        <dl className="oi-lab-status">
-          <div>
-            <dt>Frontend</dt>
-            <dd>{window.location.origin}</dd>
+        <details className="oi-lab-env">
+          <summary>Ambiente</summary>
+          <div className="oi-lab-env-body">
+            <p className="oi-lab-lead">
+              Credenciais ficam só nesta aba — nunca na URL, storage ou log.
+              A chave de organização não passa pelo navegador.
+            </p>
+            <dl className="oi-lab-status">
+              <div>
+                <dt>Frontend</dt>
+                <dd title={window.location.origin}>{window.location.origin}</dd>
+              </div>
+              <div>
+                <dt>Backend</dt>
+                <dd title="http://localhost:3000">http://localhost:3000</dd>
+              </div>
+              <div>
+                <dt>Modo</dt>
+                <dd>
+                  {previewId
+                    ? `fixture:${previewId}`
+                    : iframePath
+                      ? 'iframe'
+                      : 'idle'}
+                </dd>
+              </div>
+            </dl>
           </div>
-          <div>
-            <dt>Backend</dt>
-            <dd>http://localhost:3000</dd>
-          </div>
-          <div>
-            <dt>Modo</dt>
-            <dd>{previewId ? `fixture:${previewId}` : iframePath ? 'iframe' : 'idle'}</dd>
-          </div>
-        </dl>
+        </details>
       </section>
 
       <div className="oi-lab-layout">
-        <form
-          className="oi-lab-panel oi-lab-creds"
-          onSubmit={(event) => {
-            event.preventDefault()
-            loadFrame()
-          }}
-        >
-            <h2>Credenciais</h2>
-            <label className="oi-lab-field">
-              <span>importId</span>
-              <input
-                aria-label="importId"
-                value={importId}
-                onChange={(event) => setImportId(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                aria-invalid={importId.length > 0 && !parsedId.ok}
-              />
-              {importId.length > 0 ? (
-                <span
-                  className={
-                    parsedId.ok ? 'oi-lab-hint oi-lab-hint-ok' : 'oi-lab-hint oi-lab-hint-fail'
-                  }
-                >
-                  {parsedId.ok ? 'UUID válido' : 'UUID inválido'}
-                </span>
-              ) : (
-                <span className="oi-lab-hint">Informe o UUID da sessão</span>
-              )}
-            </label>
-
-            <label className="oi-lab-field">
-              <span>token temporário</span>
-              <div className="oi-lab-token-row">
-                <input
-                  id="oi-lab-token"
-                  aria-label="token temporário"
-                  type={tokenVisible ? 'text' : 'password'}
-                  value={accessToken}
-                  onChange={(event) => setAccessToken(event.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-invalid={accessToken.length > 0 && !tokenCheck.ok}
-                />
-                <button
-                  type="button"
-                  className="oi-secondary"
-                  aria-pressed={tokenVisible}
-                  aria-controls="oi-lab-token"
-                  onClick={() => setTokenVisible((value) => !value)}
-                >
-                  {tokenVisible ? 'Ocultar token' : 'Mostrar token'}
-                </button>
-              </div>
-              {accessToken.length > 0 ? (
-                <span
-                  className={
-                    tokenCheck.ok
-                      ? 'oi-lab-hint oi-lab-hint-ok'
-                      : 'oi-lab-hint oi-lab-hint-fail'
-                  }
-                >
-                  {tokenCheck.ok ? 'oi_import_ aceito' : 'Token inválido ou oi_live_'}
-                </span>
-              ) : (
-                <span className="oi-lab-hint">Somente oi_import_</span>
-              )}
-            </label>
-
-            <div className="oi-lab-actions">
-              <button type="submit" className="oi-primary" disabled={!canLoadFrame}>
-                Carregar iframe
-              </button>
-              <button
-                type="button"
-                className="oi-secondary"
-                disabled={!canInitialize}
-                onClick={initialize}
-              >
-                Inicializar sessão
-              </button>
-            </div>
-          </form>
-
-        <div className="oi-lab-panel oi-lab-quick">
-          <h2 id="oi-lab-quick-title">Fixture rápida</h2>
-          <p className="oi-lab-hint">Selecionar por label</p>
-          <select
-            aria-label="Seletor rápido de fixture"
-            value={previewId ?? ''}
-            onChange={(event) => {
-              const next = event.target.value
-              setIframePath(null)
-              setIframeReady(false)
-              setPreviewId(next ? (next as VisualFixtureId) : null)
+        <div className="oi-lab-actions-bar">
+          <button
+            type="button"
+            className="oi-primary"
+            disabled={labPending}
+            aria-label="Criar sessão de laboratório"
+            onClick={() => {
+              void createLabSessionFromHarness()
             }}
           >
-            <option value="">Canvas vazio</option>
-            {FIXTURE_GROUPS.map((group) => (
-              <optgroup key={group.title} label={group.title}>
-                {group.ids.map((id) => {
-                  const fixture = VISUAL_FIXTURES.find((entry) => entry.id === id)
-                  if (!fixture) return null
-                  return (
-                    <option key={fixture.id} value={fixture.id}>
-                      {fixture.label}
-                    </option>
-                  )
-                })}
-              </optgroup>
-            ))}
-          </select>
+            Criar sessão
+          </button>
+          {labPending ? (
+            <span className="oi-lab-hint">A criar sessão…</span>
+          ) : labError ? (
+            <span className="oi-lab-hint oi-lab-hint-fail">{labError}</span>
+          ) : (
+            <span className="oi-lab-hint">
+              Cada clique persiste template e sessão no Postgres local.
+            </span>
+          )}
         </div>
 
         <section className="oi-lab-main" aria-label="Canvas de QA">
@@ -370,20 +363,140 @@ export function DevHarness() {
                 <p className="oi-state-code">LAB.EMPTY</p>
                 <h2>Nenhuma sessão no canvas</h2>
                 <p>
-                  Carregue um iframe com importId válido ou escolha uma fixture
-                  no seletor rápido.
+                  Crie uma sessão para ver o importador neste canvas.
                 </p>
               </div>
             )}
           </div>
         </section>
 
+        <form
+          className="oi-lab-creds"
+          onSubmit={(event) => {
+            event.preventDefault()
+            loadFrame()
+          }}
+        >
+          <details className="oi-lab-fold">
+            <summary>Colar credenciais</summary>
+            <div className="oi-lab-fold-body">
+              <label className="oi-lab-field">
+                <span>importId</span>
+                <input
+                  aria-label="importId"
+                  value={importId}
+                  onChange={(event) => setImportId(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={importId.length > 0 && !parsedId.ok}
+                />
+                {importId.length > 0 ? (
+                  <span
+                    className={
+                      parsedId.ok
+                        ? 'oi-lab-hint oi-lab-hint-ok'
+                        : 'oi-lab-hint oi-lab-hint-fail'
+                    }
+                  >
+                    {parsedId.ok ? 'UUID válido' : 'UUID inválido'}
+                  </span>
+                ) : (
+                  <span className="oi-lab-hint">Informe o UUID da sessão</span>
+                )}
+              </label>
+
+              <label className="oi-lab-field">
+                <span>token temporário</span>
+                <div className="oi-lab-token-row">
+                  <input
+                    id="oi-lab-token"
+                    aria-label="token temporário"
+                    type={tokenVisible ? 'text' : 'password'}
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-invalid={accessToken.length > 0 && !tokenCheck.ok}
+                  />
+                  <button
+                    type="button"
+                    className="oi-secondary"
+                    aria-pressed={tokenVisible}
+                    aria-controls="oi-lab-token"
+                    onClick={() => setTokenVisible((value) => !value)}
+                  >
+                    {tokenVisible ? 'Ocultar token' : 'Mostrar token'}
+                  </button>
+                </div>
+                {accessToken.length > 0 ? (
+                  <span
+                    className={
+                      tokenCheck.ok
+                        ? 'oi-lab-hint oi-lab-hint-ok'
+                        : 'oi-lab-hint oi-lab-hint-fail'
+                    }
+                  >
+                    {tokenCheck.ok
+                      ? 'oi_import_ aceito'
+                      : 'Token inválido ou oi_live_'}
+                  </span>
+                ) : (
+                  <span className="oi-lab-hint">Somente oi_import_</span>
+                )}
+              </label>
+
+              <div className="oi-lab-actions">
+                <button
+                  type="submit"
+                  className="oi-secondary"
+                  disabled={!canLoadFrame}
+                >
+                  Carregar iframe
+                </button>
+                <button
+                  type="button"
+                  className="oi-secondary"
+                  disabled={!canInitialize}
+                  onClick={initialize}
+                >
+                  Inicializar sessão
+                </button>
+              </div>
+            </div>
+          </details>
+        </form>
+
         <aside
           className="oi-lab-advanced"
           aria-labelledby="oi-lab-fixtures-title"
           data-testid="openimport-lab-fixtures-advanced"
         >
-          <h2 id="oi-lab-fixtures-title">Fixtures avançadas</h2>
+          <h2 id="oi-lab-fixtures-title">Fixtures</h2>
+          <select
+            aria-label="Seletor rápido de fixture"
+            value={previewId ?? ''}
+            onChange={(event) => {
+              const next = event.target.value
+              setIframePath(null)
+              setIframeReady(false)
+              setPreviewId(next ? (next as VisualFixtureId) : null)
+            }}
+          >
+            <option value="">Canvas vazio</option>
+            {FIXTURE_GROUPS.map((group) => (
+              <optgroup key={group.title} label={group.title}>
+                {group.ids.map((id) => {
+                  const fixture = VISUAL_FIXTURES.find((entry) => entry.id === id)
+                  if (!fixture) return null
+                  return (
+                    <option key={fixture.id} value={fixture.id}>
+                      {fixture.label}
+                    </option>
+                  )
+                })}
+              </optgroup>
+            ))}
+          </select>
           {FIXTURE_GROUPS.map((group) => (
             <details key={group.title} className="oi-lab-fixture-group">
               <summary>{group.title}</summary>

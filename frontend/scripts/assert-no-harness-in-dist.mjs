@@ -14,6 +14,9 @@ const forbidden = [
   'created — pronta para upload',
   'Fixtures sintéticas sem token real',
   'openimport-harness-log',
+  'Criar sessão de laboratório',
+  '__openimport/lab-session',
+  'Crie uma sessão para ver o importador neste canvas',
 ]
 
 function walk(dir) {
