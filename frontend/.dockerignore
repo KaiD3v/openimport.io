@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+dist
+node_modules
+coverage
+scripts/*
+!scripts/assert-no-harness-in-dist.mjs
+!scripts/e2e-walkthrough-helpers.mjs
+!scripts/validate-frame-ancestors.mjs
+**/*.test.ts
+**/*.test.tsx
+.git
+*.md
+!README.md

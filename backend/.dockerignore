@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+dist
+node_modules
+coverage
+test
+**/*.spec.ts
+**/*.e2e-spec.ts
+docs
+.tmp
+.git
+*.md
+!README.md
