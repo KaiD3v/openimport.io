@@ -79,7 +79,7 @@ describe('createLabSession', () => {
       method: 'POST',
       authorization: `Bearer ${LIVE_API_KEY}`,
       body: {
-        name: 'Produtos de demonstração 3 lab 1704000000000',
+        name: `${templateBody.name} lab 1704000000000`,
         fields: templateBody.fields,
       },
     })
@@ -145,8 +145,8 @@ describe('createLabSession', () => {
     })
 
     expect(names).toEqual([
-      'Produtos de demonstração 3 lab 1',
-      'Produtos de demonstração 3 lab 2',
+      `${templateBody.name} lab 1`,
+      `${templateBody.name} lab 2`,
     ])
     expect(keys).toEqual(['lab-aaa', 'lab-bbb'])
   })
