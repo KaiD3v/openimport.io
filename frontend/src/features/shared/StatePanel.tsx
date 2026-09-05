@@ -1,3 +1,5 @@
+import { CopyableDetail } from './CopyableDetail.tsx'
+
 type StatePanelProps = {
   code: string
   title: string
@@ -45,17 +47,19 @@ export function StatePanel({
             <strong>Próxima ação.</strong> {nextAction}
           </p>
         ) : null}
-        {detail ? <p className="oi-state-detail">{detail}</p> : null}
-        {action?.href ? (
-          <a className="oi-primary" href={action.href}>
-            {action.label}
-          </a>
-        ) : null}
-        {action?.onClick ? (
-          <button type="button" className="oi-primary" onClick={action.onClick}>
-            {action.label}
-          </button>
-        ) : null}
+        {detail ? <CopyableDetail value={detail} /> : null}
+        <div className="oi-inline-actions">
+          {action?.href ? (
+            <a className="oi-primary" href={action.href}>
+              {action.label}
+            </a>
+          ) : null}
+          {action?.onClick ? (
+            <button type="button" className="oi-primary" onClick={action.onClick}>
+              {action.label}
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   )
