@@ -188,6 +188,100 @@ export const envSchema = z
       .max(200)
       .default(25),
     WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS: envBool,
+    TRUST_PROXY: z
+      .string()
+      .optional()
+      .transform((value) => {
+        if (value === undefined || value === 'false' || value === '0') {
+          return false as const;
+        }
+        // Never allow unrestricted boolean true.
+        if (value === 'true') {
+          return 'loopback';
+        }
+        if (/^\d+$/.test(value)) {
+          const hops = Number(value);
+          return hops >= 1 ? hops : (false as const);
+        }
+        return value;
+      }),
+    RATE_LIMIT_ENABLED: z
+      .enum(['true', 'false', '1', '0'])
+      .default('true')
+      .transform((value) => value === 'true' || value === '1'),
+    RATE_LIMIT_WINDOW_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(3_600_000)
+      .default(60_000),
+    RATE_LIMIT_PRE_AUTH_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(600),
+    RATE_LIMIT_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(300),
+    RATE_LIMIT_UPLOAD_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(20),
+    RATE_LIMIT_PREVIEW_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(60),
+    RATE_LIMIT_CONFIRM_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(30),
+    RATE_LIMIT_ACCESS_TOKEN_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(30),
+    RATE_LIMIT_WEBHOOK_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(100_000)
+      .default(20),
+    RATE_LIMIT_TRUSTED_PROXY: envBool,
+    HTTP_REQUEST_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(300_000)
+      .default(30_000),
+    HTTP_HEADERS_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(120_000)
+      .default(15_000),
+    HTTP_KEEP_ALIVE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .max(60_000)
+      .default(5_000),
+    HTTP_MAX_REQUESTS_PER_SOCKET: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(1_000_000)
+      .default(100),
     HEALTH_PROBE_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -209,6 +303,23 @@ export const envSchema = z
         code: 'custom',
         path: ['WEBHOOK_SSRF_ALLOW_PRIVATE_TARGETS'],
         message: 'private webhook targets are not allowed in production',
+      });
+    }
+    if (env.RATE_LIMIT_TRUSTED_PROXY && !env.TRUST_PROXY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RATE_LIMIT_TRUSTED_PROXY'],
+        message: 'requires TRUST_PROXY to be set to a non-false value',
+      });
+    }
+    if (
+      env.HTTP_HEADERS_TIMEOUT_MS >= env.HTTP_REQUEST_TIMEOUT_MS &&
+      env.HTTP_REQUEST_TIMEOUT_MS > 0
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['HTTP_HEADERS_TIMEOUT_MS'],
+        message: 'must be lower than HTTP_REQUEST_TIMEOUT_MS',
       });
     }
   });

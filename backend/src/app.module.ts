@@ -3,6 +3,9 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import type { Request } from 'express';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { PostAuthRateLimitGuard } from './common/http/post-auth-rate-limit.guard.js';
+import { PreAuthRateLimitGuard } from './common/http/pre-auth-rate-limit.guard.js';
+import { RateLimitModule } from './common/http/rate-limit.module.js';
 import { resolveRequestId } from './common/http/request-id.js';
 import { ApiKeyGuard } from './core/auth/api-key.guard.js';
 import { ImportAuthorizationGuard } from './core/auth/import-authorization.guard.js';
@@ -19,6 +22,7 @@ import { TemplateModule } from './modules/template/index.js';
 @Module({
   imports: [
     ConfigModule.forRoot(env),
+    RateLimitModule,
     LoggerModule.forRootAsync({
       inject: [ENV],
       useFactory: (validatedEnv: Env) => ({
@@ -68,8 +72,10 @@ import { TemplateModule } from './modules/template/index.js';
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: PreAuthRateLimitGuard },
     { provide: APP_GUARD, useClass: ApiKeyGuard },
     { provide: APP_GUARD, useClass: ImportAuthorizationGuard },
+    { provide: APP_GUARD, useClass: PostAuthRateLimitGuard },
   ],
 })
 export class AppModule {}

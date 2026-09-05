@@ -151,4 +151,51 @@ describe('loadEnv', () => {
     expect(env.IMPORT_FILE_CLEANUP_BATCH_SIZE).toBe(25);
     expect(env.IMPORT_FILE_CLEANUP_CLAIM_MS).toBe(120_000);
   });
+
+  it('rejects RATE_LIMIT_TRUSTED_PROXY without TRUST_PROXY', () => {
+    Object.assign(process.env, REQUIRED, {
+      RATE_LIMIT_TRUSTED_PROXY: 'true',
+      TRUST_PROXY: 'false',
+    });
+
+    expect(() => loadEnv()).toThrow(/RATE_LIMIT_TRUSTED_PROXY/);
+  });
+
+  it('maps TRUST_PROXY=true to loopback instead of unrestricted trust', () => {
+    Object.assign(process.env, REQUIRED, {
+      TRUST_PROXY: 'true',
+      RATE_LIMIT_TRUSTED_PROXY: 'true',
+    });
+
+    expect(loadEnv().TRUST_PROXY).toBe('loopback');
+  });
+
+  it('maps TRUST_PROXY=1 to a single trusted hop for reverse proxies', () => {
+    Object.assign(process.env, REQUIRED, {
+      TRUST_PROXY: '1',
+      RATE_LIMIT_TRUSTED_PROXY: 'true',
+    });
+
+    expect(loadEnv().TRUST_PROXY).toBe(1);
+  });
+
+  it('defaults rate-limit tiers and maxRequestsPerSocket', () => {
+    Object.assign(process.env, REQUIRED);
+    delete process.env.RATE_LIMIT_PRE_AUTH_MAX;
+    delete process.env.RATE_LIMIT_UPLOAD_MAX;
+    delete process.env.HTTP_MAX_REQUESTS_PER_SOCKET;
+
+    const loaded = loadEnv();
+    expect(loaded.RATE_LIMIT_PRE_AUTH_MAX).toBe(600);
+    expect(loaded.RATE_LIMIT_UPLOAD_MAX).toBe(20);
+    expect(loaded.HTTP_MAX_REQUESTS_PER_SOCKET).toBe(100);
+  });
+
+  it('rejects headersTimeout >= requestTimeout', () => {
+    Object.assign(process.env, REQUIRED, {
+      HTTP_REQUEST_TIMEOUT_MS: '1000',
+      HTTP_HEADERS_TIMEOUT_MS: '1000',
+    });
+    expect(() => loadEnv()).toThrow(/HTTP_HEADERS_TIMEOUT_MS/);
+  });
 });

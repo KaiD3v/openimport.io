@@ -96,6 +96,23 @@ describe('OpenImport API (e2e)', () => {
     ).toEqual([{ 'api-key': [] }]);
   });
 
+  it('documents Retry-After only on 429 response headers, not as a request parameter', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/docs-json')
+      .expect(200);
+
+    const post = response.body.paths['/api/v1/templates'].post;
+    const parameters = post.parameters ?? [];
+    expect(
+      parameters.some(
+        (parameter: { name?: string }) => parameter.name === 'Retry-After',
+      ),
+    ).toBe(false);
+    expect(post.responses['429'].headers['Retry-After']).toMatchObject({
+      schema: { type: 'string' },
+    });
+  });
+
   it('creates a template with an authenticated POST', async () => {
     const tenant = await trackTenant();
 

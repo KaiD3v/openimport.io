@@ -69,6 +69,20 @@ export class ForbiddenErrorDto {
   traceId!: string;
 }
 
+export class RateLimitExceededErrorDto {
+  @ApiProperty({ example: 'RATE_LIMIT.EXCEEDED' })
+  code!: string;
+
+  @ApiProperty({ example: 'Too many requests.' })
+  message!: string;
+
+  @ApiPropertyOptional()
+  details?: unknown;
+
+  @ApiProperty({ example: TRACE_ID_EXAMPLE })
+  traceId!: string;
+}
+
 export class TemplateNotFoundErrorDto {
   @ApiProperty({ example: 'TEMPLATE.NOT_FOUND' })
   code!: string;

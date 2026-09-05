@@ -103,6 +103,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'IMPORT.FILE_TOO_LARGE';
       case 422:
         return 'IMPORT.INVALID_CSV';
+      case 429:
+        return 'RATE_LIMIT.EXCEEDED';
       case 503:
         return 'SERVICE.UNAVAILABLE';
       default:
