@@ -33,7 +33,7 @@ describe('SiteChrome', () => {
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   })
 
-  it('marks public, lab and workbench context without a hamburger', () => {
+  it('marks public, lab and workbench context without a hamburger control', () => {
     const { unmount } = renderChrome('site')
     expect(screen.getByRole('banner')).toHaveAttribute(
       'data-chrome-context',
@@ -41,7 +41,10 @@ describe('SiteChrome', () => {
     )
     expect(screen.getByText(/^site$/i)).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: /principal/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /menu/i })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /abrir índice do site/i }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /hamburger/i })).not.toBeInTheDocument()
     unmount()
 
     const lab = renderChrome('lab')
@@ -52,6 +55,9 @@ describe('SiteChrome', () => {
     expect(
       lab.getByRole('banner').querySelector('.oi-chrome-context'),
     ).toHaveTextContent(/^laboratório$/i)
+    expect(
+      lab.queryByRole('button', { name: /abrir índice do site/i }),
+    ).not.toBeInTheDocument()
     lab.unmount()
 
     renderChrome('workbench', IMPORT_ID)
@@ -60,6 +66,9 @@ describe('SiteChrome', () => {
       'workbench',
     )
     expect(screen.getByText(/importador/i)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /abrir índice do site/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('truncates the workbench session id visually while keeping the full value', () => {

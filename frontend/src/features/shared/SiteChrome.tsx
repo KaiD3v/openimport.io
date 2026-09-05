@@ -7,6 +7,7 @@ import {
 } from '../../config/public-links.ts'
 import { GitHubLink } from './GitHubLink.tsx'
 import { compactSessionId } from './session-id.ts'
+import { SiteNavMenu } from './SiteNavMenu.tsx'
 
 type SiteChromeProps = {
   children: ReactNode
@@ -97,23 +98,7 @@ export function SiteHeader({
             ) : null}
           </div>
         ) : variant === 'lab' ? null : (
-          <>
-            {import.meta.env.DEV ? (
-              <a
-                className="oi-lab-cta"
-                href="/dev"
-                aria-label="Abrir laboratório"
-              >
-                <span className="oi-lab-cta-full">Abrir laboratório</span>
-                <span className="oi-lab-cta-short">Lab</span>
-              </a>
-            ) : null}
-            <nav className="oi-site-nav" aria-label="Principal">
-              <a href="/#pipeline">Como funciona</a>
-              <a href="/docs">Documentação</a>
-              <GitHubLink />
-            </nav>
-          </>
+          <SiteNavMenu showLabCta={import.meta.env.DEV} />
         )}
       </div>
     </header>

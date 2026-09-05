@@ -34,6 +34,19 @@ describe('global chrome CSS', () => {
     expect(css).not.toMatch(/hamburger/i)
   })
 
+  it('uses a protocol NAV dropdown on small screens instead of inline crowding', () => {
+    expect(css).toMatch(/\.oi-site-nav-toggle\s*\{/)
+    expect(css).toMatch(/\.oi-site-nav\.is-open/)
+    expect(css).toMatch(
+      /@media \(min-width: 768px\)[\s\S]*\.oi-site-nav-toggle\s*\{[^}]*display:\s*none/s,
+    )
+    expect(css).toMatch(/\.oi-site-actions\s*\{/)
+    expect(css).toMatch(
+      /\.oi-chrome-header:has\(\.oi-site-nav\.is-open\)/,
+    )
+    expect(css).not.toMatch(/oi-site-nav-shell/)
+  })
+
   it('treats the lab as a flush instrument grid with canvas before side panels', () => {
     expect(css).toMatch(
       /\.oi-lab-layout\s*\{[^}]*grid-template-areas:\s*"actions"\s*"main"\s*"creds"\s*"fixtures"\s*"log"/s,

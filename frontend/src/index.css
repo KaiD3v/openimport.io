@@ -226,9 +226,14 @@ body::after {
   gap: 0.2rem 1rem;
   align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "brand actions";
+}
+
+.oi-chrome-header:has(.oi-site-nav.is-open) .oi-chrome-header-inner {
   grid-template-areas:
-    "brand cta"
+    "brand actions"
     "nav nav";
+  gap: 0.55rem 1rem;
 }
 
 .oi-chrome-header[data-chrome-context="workbench"] .oi-chrome-header-inner {
@@ -289,13 +294,73 @@ body::after {
   grid-area: cta;
 }
 
-.oi-site-nav {
-  grid-area: nav;
+.oi-site-actions {
+  grid-area: actions;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
   align-items: center;
-  gap: 0.35rem 0.95rem;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.oi-site-nav-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: var(--touch);
+  padding: 0 0.75rem;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  color: var(--phosphor);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 2px 0 0 var(--signal);
+}
+
+.oi-site-nav-toggle:hover,
+.oi-site-nav-toggle:focus-visible {
+  border-color: var(--phosphor);
+  color: var(--phosphor);
+  outline: none;
+}
+
+.oi-site-nav-toggle:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.oi-site-nav-toggle-legend {
+  line-height: 1;
+}
+
+.oi-site-nav-toggle-caret {
+  color: var(--signal);
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+/* Mobile: in-flow tray under the brand row (not a floating dropdown). */
+.oi-site-nav {
+  display: none;
+  grid-area: nav;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--source);
+  box-shadow: inset 3px 0 0 var(--phosphor);
+}
+
+.oi-site-nav.is-open {
+  display: flex;
 }
 
 .oi-chrome-workbench {
@@ -312,18 +377,25 @@ body::after {
   color: var(--mist);
   text-decoration: none;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   min-height: var(--touch);
   display: inline-flex;
   align-items: center;
-  padding: 0 0.1rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 85%, transparent);
+}
+
+.oi-site-nav a:last-child {
+  border-bottom: 0;
 }
 
 .oi-site-nav a:hover,
 .oi-site-nav a:focus-visible {
   color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+  outline: none;
 }
 
 .oi-hero,
@@ -1537,8 +1609,42 @@ body::after {
     grid-template-areas: "brand context status";
   }
 
-  .oi-site-nav {
+  .oi-site-actions {
+    display: contents;
+  }
+
+  .oi-site-nav-toggle {
+    display: none;
+  }
+
+  .oi-chrome-header:has(.oi-site-nav.is-open) .oi-chrome-header-inner {
+    grid-template-areas: "brand context nav cta";
+  }
+
+  .oi-site-nav,
+  .oi-site-nav.is-open {
+    display: flex;
+    grid-area: nav;
+    flex-direction: row;
+    align-items: center;
     justify-content: flex-end;
+    justify-self: end;
+    gap: 0.85rem 1.1rem;
+    width: auto;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .oi-site-nav a {
+    padding: 0 0.1rem;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .oi-site-nav a:hover,
+  .oi-site-nav a:focus-visible {
+    background: transparent;
   }
 
   .oi-session-grid {
