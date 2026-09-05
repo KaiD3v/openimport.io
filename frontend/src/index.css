@@ -477,6 +477,15 @@ body::after {
   margin-top: 1.5rem;
 }
 
+.oi-home-embed-cta {
+  margin: 0 0 1rem;
+}
+
+.oi-home-embed-cta .oi-primary {
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
 .oi-section h2 {
   margin: 0 0 0.75rem;
   font-size: 1.45rem;
@@ -2401,4 +2410,264 @@ body::after {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* —— Public /docs integration guide —— */
+
+.oi-docs {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 1.35rem 1.25rem 3rem;
+}
+
+.oi-docs-hero {
+  margin-bottom: 1.75rem;
+}
+
+.oi-docs-hero h1 {
+  margin: 0 0 0.75rem;
+  font-family: var(--display);
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  max-width: 18ch;
+}
+
+.oi-docs-lead {
+  margin: 0;
+  max-width: 42rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.oi-docs-toc {
+  margin: 0 0 2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.oi-docs-toc-label {
+  margin: 0 0 0.65rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mist);
+}
+
+.oi-docs-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  columns: 1;
+}
+
+@media (min-width: 720px) {
+  .oi-docs-toc ol {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.oi-docs-toc a {
+  color: var(--chalk);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.oi-docs-toc a:hover,
+.oi-docs-toc a:focus-visible {
+  border-bottom-color: var(--phosphor);
+  color: var(--phosphor);
+}
+
+.oi-docs-section {
+  margin: 0 0 2.25rem;
+  padding-top: 0.25rem;
+  scroll-margin-top: 4.5rem;
+}
+
+.oi-docs-section h2 {
+  margin: 0 0 0.75rem;
+  font-family: var(--display);
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.oi-docs-section > p {
+  margin: 0 0 0.85rem;
+  max-width: 42rem;
+  color: var(--muted);
+}
+
+.oi-docs-section .oi-code {
+  margin: 0.85rem 0 1.1rem;
+}
+
+.oi-docs-section .oi-docs-terminal {
+  margin: 0.85rem 0 1.25rem;
+}
+
+.oi-docs-section .oi-how {
+  margin: 0 0 1rem;
+}
+
+.oi-docs-list {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  max-width: 42rem;
+  color: var(--muted);
+}
+
+.oi-docs-list li {
+  margin-bottom: 0.4rem;
+}
+
+.oi-docs-list a {
+  color: var(--phosphor);
+}
+
+/* Workbench terminal — docs code blocks */
+.oi-docs-terminal {
+  margin: 0;
+  border: 1px solid var(--rule);
+  background: var(--source);
+  box-shadow: inset 3px 0 0 var(--phosphor);
+}
+
+.oi-docs-terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: var(--touch);
+  padding: 0.35rem 0.75rem 0.35rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--panel) 88%, var(--source));
+}
+
+.oi-docs-terminal-lang {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--phosphor);
+}
+
+.oi-docs-terminal-prompt {
+  color: var(--signal);
+  letter-spacing: 0;
+}
+
+.oi-docs-terminal-copy {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--chalk);
+  width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.oi-docs-terminal-copy:hover,
+.oi-docs-terminal-copy:focus-visible {
+  border-color: var(--phosphor);
+  color: var(--phosphor);
+  outline: none;
+}
+
+.oi-docs-terminal-copy:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.oi-docs-terminal-icon {
+  display: block;
+}
+
+.oi-docs-back-wrap {
+  margin: 1.25rem 0 0;
+}
+
+.oi-docs-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  color: var(--chalk);
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  text-decoration: none;
+}
+
+.oi-docs-back:hover,
+.oi-docs-back:focus-visible {
+  color: var(--phosphor);
+  border-color: var(--phosphor);
+  outline: none;
+}
+
+.oi-docs-back:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.oi-docs-back-icon {
+  display: block;
+}
+
+.oi-docs-terminal-pre {
+  margin: 0;
+  padding: 1rem 1rem 1.1rem 1.05rem;
+  overflow-x: auto;
+  color: var(--chalk);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.oi-docs-terminal-pre code {
+  font-family: inherit;
+}
+
+.oi-syn-keyword {
+  color: var(--phosphor);
+}
+
+.oi-syn-string {
+  color: var(--signal);
+}
+
+.oi-syn-comment {
+  color: var(--mist);
+  font-style: italic;
+}
+
+.oi-syn-number {
+  color: #7ad4a0;
+}
+
+.oi-syn-function {
+  color: #f0d78c;
+}
+
+.oi-syn-punct {
+  color: #6d7f92;
+}
+
+.oi-syn-plain {
+  color: var(--chalk);
 }
