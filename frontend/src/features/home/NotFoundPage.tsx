@@ -1,15 +1,10 @@
+import { SiteChrome } from '../shared/SiteChrome.tsx'
 import { StatePanel } from '../shared/StatePanel.tsx'
 
 export function NotFoundPage() {
   return (
-    <div className="oi-site oi-site-compact">
-      <header className="oi-site-header">
-        <a className="oi-site-brand" href="/">
-          <span className="oi-brand-mark" aria-hidden="true" />
-          OpenImport
-        </a>
-      </header>
-      <main className="oi-state-page">
+    <SiteChrome>
+      <main id="conteudo-principal" className="oi-state-page" tabIndex={-1}>
         <StatePanel
           code="ROUTE.NOT_FOUND"
           tone="warn"
@@ -20,6 +15,6 @@ export function NotFoundPage() {
           action={{ label: 'Ir para a página inicial', href: '/' }}
         />
       </main>
-    </div>
+    </SiteChrome>
   )
 }
