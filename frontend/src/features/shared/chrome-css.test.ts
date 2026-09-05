@@ -55,4 +55,22 @@ describe('global chrome CSS', () => {
     expect(css).toMatch(/\.oi-docs-terminal\s*\{/)
     expect(css).toMatch(/\.oi-syn-keyword\s*\{/)
   })
+
+  it('keeps /docs terminals from forcing page-wide horizontal scroll on small screens', () => {
+    expect(css).toMatch(/\.oi-site > main\s*\{[^}]*min-width:\s*0/s)
+    expect(css).toMatch(/\.oi-docs\s*\{[^}]*overflow-x:\s*clip/s)
+    expect(css).toMatch(/\.oi-docs-terminal\s*\{[^}]*max-width:\s*100%/s)
+    expect(css).toMatch(
+      /\.oi-docs-terminal-pre\s*\{[^}]*overflow-x:\s*auto/s,
+    )
+    expect(css).toMatch(
+      /\.oi-docs-terminal-pre code\s*\{[^}]*width:\s*max-content/s,
+    )
+    expect(css).toMatch(
+      /\.oi-docs-terminal-copy\s*\{[^}]*min-width:\s*var\(--touch\)/s,
+    )
+    expect(css).toMatch(
+      /@media \(max-width: 767px\)[\s\S]*\.oi-docs-section\s*\{[^}]*scroll-margin-top:\s*7\.5rem/s,
+    )
+  })
 })

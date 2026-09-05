@@ -207,6 +207,11 @@ body::after {
   background: transparent;
 }
 
+.oi-site > main {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .oi-chrome-header {
   width: 100%;
   border-bottom: 1px solid color-mix(in srgb, var(--signal) 16%, var(--rule));
@@ -287,9 +292,10 @@ body::after {
 .oi-site-nav {
   grid-area: nav;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   align-items: center;
-  gap: 0.85rem 1.1rem;
+  gap: 0.35rem 0.95rem;
 }
 
 .oi-chrome-workbench {
@@ -2415,9 +2421,13 @@ body::after {
 /* —— Public /docs integration guide —— */
 
 .oi-docs {
+  width: 100%;
   max-width: var(--max);
+  min-width: 0;
   margin: 0 auto;
   padding: 1.35rem 1.25rem 3rem;
+  box-sizing: border-box;
+  overflow-x: clip;
 }
 
 .oi-docs-hero {
@@ -2427,8 +2437,8 @@ body::after {
 .oi-docs-hero h1 {
   margin: 0 0 0.75rem;
   font-family: var(--display);
-  font-size: clamp(2rem, 5vw, 3rem);
-  line-height: 1;
+  font-size: clamp(1.75rem, 7vw, 3rem);
+  line-height: 1.05;
   letter-spacing: -0.03em;
   max-width: 18ch;
 }
@@ -2475,6 +2485,9 @@ body::after {
   color: var(--chalk);
   text-decoration: none;
   border-bottom: 1px solid transparent;
+  display: inline-flex;
+  min-height: var(--touch);
+  align-items: center;
 }
 
 .oi-docs-toc a:hover,
@@ -2487,19 +2500,29 @@ body::after {
   margin: 0 0 2.25rem;
   padding-top: 0.25rem;
   scroll-margin-top: 4.5rem;
+  min-width: 0;
 }
 
 .oi-docs-section h2 {
   margin: 0 0 0.75rem;
   font-family: var(--display);
-  font-size: 1.45rem;
+  font-size: clamp(1.2rem, 4.5vw, 1.45rem);
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .oi-docs-section > p {
   margin: 0 0 0.85rem;
   max-width: 42rem;
   color: var(--muted);
+}
+
+.oi-docs-section code,
+.oi-docs-list code,
+.oi-docs-lead .oi-mono,
+.oi-docs-section .oi-mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .oi-docs-section .oi-code {
@@ -2532,6 +2555,8 @@ body::after {
 /* Workbench terminal — docs code blocks */
 .oi-docs-terminal {
   margin: 0;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--rule);
   background: var(--source);
   box-shadow: inset 3px 0 0 var(--phosphor);
@@ -2553,6 +2578,7 @@ body::after {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  min-width: 0;
   font-family: var(--mono);
   font-size: 0.78rem;
   letter-spacing: 0.08em;
@@ -2563,6 +2589,7 @@ body::after {
 .oi-docs-terminal-prompt {
   color: var(--signal);
   letter-spacing: 0;
+  flex-shrink: 0;
 }
 
 .oi-docs-terminal-copy {
@@ -2570,12 +2597,14 @@ body::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   border: 1px solid var(--rule);
   background: transparent;
   color: var(--chalk);
-  width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
+  width: var(--touch);
+  height: var(--touch);
+  min-width: var(--touch);
+  min-height: var(--touch);
   padding: 0;
   cursor: pointer;
 }
@@ -2631,15 +2660,22 @@ body::after {
 .oi-docs-terminal-pre {
   margin: 0;
   padding: 1rem 1rem 1.1rem 1.05rem;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   color: var(--chalk);
   font-family: var(--mono);
   font-size: 0.85rem;
   line-height: 1.5;
   tab-size: 2;
+  white-space: pre;
 }
 
 .oi-docs-terminal-pre code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
   font-family: inherit;
 }
 
@@ -2670,4 +2706,37 @@ body::after {
 
 .oi-syn-plain {
   color: var(--chalk);
+}
+
+@media (max-width: 767px) {
+  .oi-docs {
+    padding: 1.1rem 0.9rem 2.5rem;
+  }
+
+  .oi-docs-lead {
+    font-size: 1rem;
+  }
+
+  .oi-docs-toc {
+    padding: 0.85rem 0.9rem;
+  }
+
+  .oi-docs-section {
+    scroll-margin-top: 7.5rem;
+    margin-bottom: 1.75rem;
+  }
+
+  .oi-docs-terminal-bar {
+    padding-inline: 0.65rem;
+  }
+
+  .oi-docs-terminal-pre {
+    padding: 0.85rem 0.75rem 0.95rem;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .oi-docs-section .oi-how li {
+    padding: 0.85rem 0.9rem;
+  }
 }
