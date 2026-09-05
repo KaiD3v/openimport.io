@@ -13,6 +13,7 @@ describe('env file protection', () => {
     expect(example).toContain('VITE_OPENIMPORT_PARENT_ORIGINS=')
     expect(example).toContain('VITE_OPENIMPORT_REPOSITORY_URL=')
     expect(example).not.toMatch(/oi_live_|oi_import_/)
+    expect(example).not.toMatch(/SEED_API_KEY/)
   })
 
   it('ignores .env and variants while allowing .env.example', () => {

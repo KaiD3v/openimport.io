@@ -24,5 +24,10 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "scripts/e2e-walkthrough-helpers.mjs"]
+  "include": [
+    "src",
+    "scripts/e2e-walkthrough-helpers.mjs",
+    "scripts/create-lab-session.d.mts",
+    "scripts/read-seed-api-key.mjs"
+  ]
 }
