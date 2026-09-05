@@ -23,13 +23,37 @@ describe('public pages without embed config', () => {
     expect(screen.getAllByText(/registros válidos/i).length).toBeGreaterThan(0)
   })
 
+  it('links to the integration documentation', () => {
+    render(<HomePage />)
+    const docs = screen.getAllByRole('link', {
+      name: /documentação|ler documentação/i,
+    })
+    expect(docs.length).toBeGreaterThan(0)
+    expect(docs.some((el) => el.getAttribute('href') === '/docs')).toBe(true)
+  })
+
+  it('exposes the production embed path for external host systems', () => {
+    render(<HomePage />)
+    const embed = screen.getAllByRole('link', {
+      name: /rota de produção para sistemas externos: \/imports\/:importId/i,
+    })
+    expect(embed.length).toBeGreaterThan(0)
+    expect(
+      embed.every((el) => el.getAttribute('href')?.startsWith('/docs')),
+    ).toBe(true)
+    expect(embed[0]).toHaveTextContent('/imports/:importId')
+  })
+
   it('exposes a laboratory CTA in development', () => {
     render(<HomePage />)
     const lab = screen.getAllByRole('link', { name: /abrir laboratório/i })
     expect(lab.length).toBeGreaterThan(0)
     expect(lab[0]).toHaveAttribute('href', '/dev')
     expect(
-      screen.getByText(/sessão e token configurados localmente/i),
+      screen.getByText(/laboratório em/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/sistemas externos usam/i),
     ).toBeInTheDocument()
   })
 
@@ -74,6 +98,7 @@ describe('public pages without embed config', () => {
       'href',
       '/',
     )
+    expect(screen.getByText(/\/docs/)).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: /desenvolvido por kaid3v/i }),
     ).toBeInTheDocument()

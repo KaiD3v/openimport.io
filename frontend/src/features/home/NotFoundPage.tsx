@@ -11,7 +11,7 @@ export function NotFoundPage() {
           title="Página não encontrada"
           body="Este endereço não corresponde à homepage nem a uma sessão de importação."
           nextAction="Volte à página inicial ou abra /imports/:importId a partir do sistema de origem."
-          detail="Rotas válidas: / · /imports/:uuid"
+          detail="Rotas válidas: / · /docs · /imports/:uuid"
           action={{ label: 'Ir para a página inicial', href: '/' }}
         />
       </main>

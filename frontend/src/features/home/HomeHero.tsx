@@ -23,31 +23,30 @@ export function HomeHero() {
           ) : productionCta.kind === 'github' ? (
             <GitHubLink className="oi-primary">Ver no GitHub</GitHubLink>
           ) : (
-            <a className="oi-primary" href="#pipeline">
-              Como funciona
+            <a className="oi-primary" href="/docs">
+              Ler documentação
             </a>
           )}
-          {import.meta.env.DEV ? (
-            repositoryUrl ? (
-              <GitHubLink className="oi-secondary">Ver no GitHub</GitHubLink>
-            ) : (
-              <a className="oi-secondary" href="#pipeline">
-                Como funciona
-              </a>
-            )
-          ) : productionCta.kind === 'github' ? (
-            <a className="oi-secondary" href="#pipeline">
-              Como funciona
-            </a>
-          ) : null}
+          <a
+            className="oi-secondary oi-mono"
+            href="/docs#passo-4-iframe"
+            aria-label="Rota de produção para sistemas externos: /imports/:importId"
+          >
+            /imports/:importId
+          </a>
         </div>
         {import.meta.env.DEV ? (
           <p className="oi-hero-lab-note">
-            O laboratório em <span className="oi-mono">/dev</span> usa sessão e
-            token configurados localmente. Nada disso entra no bundle de
-            produção.
+            O laboratório em <span className="oi-mono">/dev</span> é só
+            desenvolvimento. Em produção, sistemas externos usam{' '}
+            <span className="oi-mono">/imports/:importId</span>.
           </p>
-        ) : null}
+        ) : (
+          <p className="oi-hero-lab-note">
+            Rota de produção para o iframe do host:{' '}
+            <span className="oi-mono">/imports/:importId</span>.
+          </p>
+        )}
       </div>
 
       <div

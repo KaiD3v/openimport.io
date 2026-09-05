@@ -1,6 +1,9 @@
 import { GitHubLink } from '../shared/GitHubLink.tsx'
 import { getOpenImportRepositoryUrl } from '../../config/public-links.ts'
 
+/** Production embed path for host systems — not the DEV /dev lab. */
+export const PRODUCTION_EMBED_PATH = '/imports/:importId'
+
 export function HomeOpenSource() {
   const repositoryUrl = getOpenImportRepositoryUrl()
 
@@ -21,19 +24,23 @@ export function HomeOpenSource() {
           <GitHubLink>Ver o repositório no GitHub</GitHubLink>
         </p>
       ) : null}
-      <p>Abra <code>/imports/:importId</code> e envie do parent:</p>
-      <pre className="oi-code" tabIndex={0}>
-        <code>{`{
-  "type": "openimport.initialize",
-  "version": 1,
-  "importId": "<uuid>",
-  "accessToken": "oi_import_<64 hex>"
-}`}</code>
-      </pre>
       <p>
-        Respostas: <code>openimport.ready</code>,{' '}
-        <code>openimport.loaded</code>, <code>openimport.error</code>. Origem
-        explícita — nunca <code>*</code>.
+        Em sistemas externos reais, o host abre a bancada nesta rota e envia{' '}
+        <code>openimport.initialize</code> por <code>postMessage</code>:
+      </p>
+      <p className="oi-home-embed-cta">
+        <a
+          className="oi-primary oi-mono"
+          href="/docs#passo-4-iframe"
+          aria-label={`Rota de produção para sistemas externos: ${PRODUCTION_EMBED_PATH}`}
+        >
+          {PRODUCTION_EMBED_PATH}
+        </a>
+      </p>
+      <p>
+        <a className="oi-secondary" href="/docs">
+          Ler documentação de integração
+        </a>
       </p>
     </section>
   )
