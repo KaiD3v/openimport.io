@@ -68,9 +68,10 @@ describe('SiteChrome', () => {
     const compact = screen.getByText(compactSessionId(IMPORT_ID))
     expect(compact).toHaveAttribute('title', IMPORT_ID)
     expect(screen.queryByText(IMPORT_ID)).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('link', { name: /openimport/i }),
-    ).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: /^openimport$/i })).toHaveAttribute(
+      'href',
+      '/',
+    )
   })
 
   it('keeps the footer attribution, license and protocol line', () => {
@@ -95,6 +96,9 @@ describe('SiteChrome', () => {
     expect(
       screen.queryByRole('navigation', { name: /principal/i }),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: /^documentação$/i }),
+    ).not.toBeInTheDocument()
     expect(screen.getByText(/OPENIMPORT:\/\/LAB/i)).toBeInTheDocument()
     expect(
       screen.queryByText(/OPENIMPORT:\/\/SELF-HOSTED/i),
@@ -102,6 +106,13 @@ describe('SiteChrome', () => {
     expect(
       screen.queryByRole('link', { name: /desenvolvido por kaid3v/i }),
     ).not.toBeInTheDocument()
+  })
+
+  it('exposes Documentação in the public site nav', () => {
+    renderChrome('site')
+    expect(
+      screen.getByRole('link', { name: /^documentação$/i }),
+    ).toHaveAttribute('href', '/docs')
   })
 
   it('does not render a broken repository label when no GitHub URL is passed through', () => {

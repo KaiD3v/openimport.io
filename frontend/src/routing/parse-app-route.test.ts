@@ -21,8 +21,13 @@ describe('parseAppRoute', () => {
     })
   })
 
+  it('routes /docs to docs', () => {
+    expect(parseAppRoute('/docs')).toEqual({ kind: 'docs' })
+    expect(parseAppRoute('/docs/')).toEqual({ kind: 'docs' })
+  })
+
   it('routes unknown paths to not-found', () => {
-    expect(parseAppRoute('/docs')).toEqual({ kind: 'not-found' })
+    expect(parseAppRoute('/docs/extra')).toEqual({ kind: 'not-found' })
     expect(parseAppRoute('/imports')).toEqual({ kind: 'not-found' })
   })
 })

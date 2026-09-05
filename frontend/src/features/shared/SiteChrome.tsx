@@ -110,6 +110,7 @@ export function SiteHeader({
             ) : null}
             <nav className="oi-site-nav" aria-label="Principal">
               <a href="/#pipeline">Como funciona</a>
+              <a href="/docs">Documentação</a>
               <GitHubLink />
             </nav>
           </>

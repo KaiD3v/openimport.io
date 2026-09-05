@@ -47,4 +47,12 @@ describe('global chrome CSS', () => {
     )
     expect(css).not.toMatch(/\.oi-lab-panel\s*\{[^}]*margin-bottom/s)
   })
+
+  it('styles the public /docs guide layout, TOC and terminal code blocks', () => {
+    expect(css).toMatch(/\.oi-docs\s*\{/)
+    expect(css).toMatch(/\.oi-docs-toc\s*\{/)
+    expect(css).toMatch(/\.oi-docs-section\s*\{/)
+    expect(css).toMatch(/\.oi-docs-terminal\s*\{/)
+    expect(css).toMatch(/\.oi-syn-keyword\s*\{/)
+  })
 })

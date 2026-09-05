@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 export type AppRoute =
   | { kind: 'home' }
+  | { kind: 'docs' }
   | { kind: 'import'; importId: string }
   | { kind: 'invalid-import' }
   | { kind: 'not-found' }
@@ -12,6 +13,10 @@ export function parseAppRoute(pathname: string): AppRoute {
 
   if (parts.length === 0) {
     return { kind: 'home' }
+  }
+
+  if (parts.length === 1 && parts[0] === 'docs') {
+    return { kind: 'docs' }
   }
 
   if (parts[0] === 'imports') {

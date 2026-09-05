@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { shouldRetryFailedQuery } from './api/query-retry.ts'
 import { readRuntimeConfig } from './config/runtime.ts'
+import { DocsPage } from './features/docs/DocsPage.tsx'
 import { HomePage } from './features/home/HomePage.tsx'
 import { InvalidImportPage } from './features/home/InvalidImportPage.tsx'
 import { NotFoundPage } from './features/home/NotFoundPage.tsx'
@@ -15,6 +16,10 @@ export default function App() {
 
   if (route.kind === 'home') {
     return <HomePage />
+  }
+
+  if (route.kind === 'docs') {
+    return <DocsPage />
   }
 
   if (route.kind === 'not-found') {

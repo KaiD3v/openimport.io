@@ -24,6 +24,16 @@ describe('App routing', () => {
     ).toHaveAttribute('href', '/dev')
   })
 
+  it('renders documentation at /docs without embed config', () => {
+    renderAt('/docs')
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: /documentação de integração/i,
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('renders a dedicated 404 for unknown routes', () => {
     renderAt('/does-not-exist')
     expect(
