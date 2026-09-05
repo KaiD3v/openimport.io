@@ -33,6 +33,7 @@ import {
   shouldReportProcessingFromConfirmCache,
   snapshotSessionArtifacts,
 } from './e2e-walkthrough-helpers.mjs'
+import { readSeedApiKey } from './read-seed-api-key.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '../..')
@@ -66,18 +67,6 @@ if (!allowPersist) {
   process.exit(2)
 }
 
-function readSeedKey() {
-  const text = readFileSync(backendEnvPath, 'utf8')
-  const match = text.match(/^SEED_API_KEY=(.+)$/m)
-  if (!match) {
-    throw new Error('SEED_API_KEY missing in backend/.env')
-  }
-  const key = match[1].trim().replace(/^["']|["']$/g, '')
-  if (!key.startsWith('oi_live_')) {
-    throw new Error('SEED_API_KEY must be oi_live_')
-  }
-  return key
-}
 
 async function apiJson(path, { method = 'GET', token, body, headers = {} } = {}) {
   const response = await fetch(`${api}${path}`, {
@@ -196,7 +185,7 @@ async function loadAndInit(page, importId, accessToken) {
   return page.frameLocator('iframe.oi-harness-frame')
 }
 
-const apiKey = readSeedKey()
+const apiKey = readSeedApiKey(backendEnvPath)
 const templateBody = JSON.parse(
   readFileSync(join(root, 'backend/docs/examples/products-template.json'), 'utf8'),
 )

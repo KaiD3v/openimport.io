@@ -26,6 +26,8 @@ describe('e2e walkthrough helpers (runtime module)', () => {
     expect(walkthroughSource).toContain(
       "from './e2e-walkthrough-helpers.mjs'",
     )
+    expect(walkthroughSource).toContain("from './read-seed-api-key.mjs'")
+    expect(walkthroughSource).not.toContain('function readSeedKey')
     expect(walkthroughSource).not.toMatch(/keep in sync/i)
   })
 
