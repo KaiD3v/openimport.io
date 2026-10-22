@@ -262,6 +262,7 @@ export class ImportProcessingJobPublisher {
         backoff: {
           type: 'exponential',
           delay: this.env.IMPORT_WORKER_BACKOFF_MS,
+          jitter: 0.5,
         },
         removeOnComplete: { age: 86_400 },
         removeOnFail: { age: 86_400 * 7 },
