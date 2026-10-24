@@ -66,6 +66,17 @@ describe('ImportProcessingJobPublisher', () => {
     const result = await publisher.ensureProcessable(base);
     expect(result.outcome).toBe('missing_published');
     expect(queue.add).toHaveBeenCalledOnce();
+    expect(queue.add).toHaveBeenCalledWith(
+      'process',
+      expect.anything(),
+      expect.objectContaining({
+        backoff: {
+          type: 'exponential',
+          delay: 100,
+          jitter: 0.5,
+        },
+      }),
+    );
   });
 
   it('keeps waiting/delayed/active jobs without republishing', async () => {
